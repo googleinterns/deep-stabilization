@@ -1,3 +1,3 @@
 # Deep Stabilization
 
-This repository contains a explorations on CNN-based video stabilization.
+This repository contains explorations on CNN-based video stabilization.
