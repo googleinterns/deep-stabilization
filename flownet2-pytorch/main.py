@@ -24,8 +24,11 @@ def inference(args, epoch, data_path, data_loader, model, offset=0):
     
     if args.save_flow or args.render_validation:
         flow_folder = "{}/flo".format(data_path)
+        flow_back_folder = "{}/flo_back".format(data_path)
         if not os.path.exists(flow_folder):
             os.makedirs(flow_folder)
+        if not os.path.exists(flow_back_folder):
+            os.makedirs(flow_back_folder)
     
     # visualization folder
     if args.inference_visualize:
@@ -39,26 +42,32 @@ def inference(args, epoch, data_path, data_loader, model, offset=0):
         leave=True, position=offset)
 
     for batch_idx, (data) in enumerate(progress):
+        data = data[0]
+        data_back = torch.cat((data[:,:,1:,:,:], data[:,:,:1,:,:]), dim = 2)
         if args.cuda:
-            data = [d.cuda(non_blocking=True) for d in data]
-        data = [Variable(d) for d in data]
+            data_forward = data.cuda(non_blocking=True)
+            data_back = data_back.cuda(non_blocking=True)
+        data_forward = Variable(data_forward)
+        data_back = Variable(data_back)
 
-        with torch.no_grad():
-            # t1 = time.time()
-            output = model(data[0])
-            # t2 = time.time()
-            # print("\n",t2-t1,"\n")
-
-        # import IPython; IPython.embed()
-        if args.save_flow or args.render_validation:
-            for i in range(args.inference_batch_size):
-                _pflow = output[i].data.cpu().numpy().transpose(1, 2, 0)
-                flow_utils.writeFlow( join(flow_folder, '%06d.flo'%(batch_idx * args.inference_batch_size + i)),  _pflow)
-                
-                # You can comment out the plt block in visulize_flow_file() for real-time visualization
+        flo_path = join(flow_folder, '%06d.flo'%(batch_idx))
+        flo_back_path = join(flow_back_folder, '%06d.flo'%(batch_idx))
+        if not os.path.exists(flo_path):
+            with torch.no_grad():
+                output = model(data_forward)
+            if args.save_flow or args.render_validation:
+                _pflow = output[0].data.cpu().numpy().transpose(1, 2, 0)
+                flow_utils.writeFlow( flo_path,  _pflow)
                 if args.inference_visualize:
                     flow_utils.visulize_flow_file(
-                        join(flow_folder, '%06d.flo' % (batch_idx * args.inference_batch_size + i)),flow_vis_folder)
+                        join(flow_folder, '%06d.flo' % (batch_idx)),flow_vis_folder)
+
+        if not os.path.exists(flo_back_path):
+            with torch.no_grad():
+                output = model(data_back)
+            if args.save_flow or args.render_validation:
+                _pflow = output[0].data.cpu().numpy().transpose(1, 2, 0)
+                flow_utils.writeFlow( flo_back_path,  _pflow)
                 
         progress.update(1)
 
