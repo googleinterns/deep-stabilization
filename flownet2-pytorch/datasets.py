@@ -27,6 +27,15 @@ class StaticCenterCrop(object):
     def __call__(self, img):
         return img[(self.h-self.th)//2:(self.h+self.th)//2, (self.w-self.tw)//2:(self.w+self.tw)//2,:]
 
+class Padding(object):
+    def __init__(self, image_size, pad_size):
+        self.th, self.tw = pad_size
+        self.h, self.w = image_size
+    def __call__(self, img):
+        out = np.zeros((self.th, self.tw, 3))
+        out[:self.h, :self.w,:] = img
+        return out
+
 class MpiSintel(data.Dataset):
     def __init__(self, args, is_cropped = False, root = '', dstype = 'clean', replicates = 1):
         self.args = args
@@ -394,8 +403,9 @@ class Google(data.Dataset):
         self.frame_size = frame_utils.read_gen(self.image_list[0][0]).shape
 
         if (self.render_size[0] < 0) or (self.render_size[1] < 0) or (self.frame_size[0]%64) or (self.frame_size[1]%64):
-            self.render_size[0] = ( (self.frame_size[0])//64 ) * 64
-            self.render_size[1] = ( (self.frame_size[1])//64 ) * 64
+            self.render_size[0] = ( math.ceil(self.frame_size[0]/64) ) * 64
+            self.render_size[1] = ( math.ceil(self.frame_size[1]/64) ) * 64
+
 
         args.inference_size = self.render_size
 
@@ -412,7 +422,7 @@ class Google(data.Dataset):
         if self.is_cropped:
             cropper = StaticRandomCrop(image_size, self.crop_size)
         else:
-            cropper = StaticCenterCrop(image_size, self.render_size)
+            cropper = Padding(image_size, self.render_size)
         images = list(map(cropper, images))
 
         images = np.array(images).transpose(3,0,1,2)

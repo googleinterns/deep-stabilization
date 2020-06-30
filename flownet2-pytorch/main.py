@@ -52,9 +52,10 @@ def inference(args, epoch, data_path, data_loader, model, offset=0):
 
         flo_path = join(flow_folder, '%06d.flo'%(batch_idx))
         flo_back_path = join(flow_back_folder, '%06d.flo'%(batch_idx))
+        frame_size = data_loader.dataset.frame_size
         if not os.path.exists(flo_path):
             with torch.no_grad():
-                output = model(data_forward)
+                output = model(data_forward)[:,:,:frame_size[0], :frame_size[1]]
             if args.save_flow or args.render_validation:
                 _pflow = output[0].data.cpu().numpy().transpose(1, 2, 0)
                 flow_utils.writeFlow( flo_path,  _pflow)
@@ -64,7 +65,7 @@ def inference(args, epoch, data_path, data_loader, model, offset=0):
 
         if not os.path.exists(flo_back_path):
             with torch.no_grad():
-                output = model(data_back)
+                output = model(data_back)[:,:,:frame_size[0], :frame_size[1]]
             if args.save_flow or args.render_validation:
                 _pflow = output[0].data.cpu().numpy().transpose(1, 2, 0)
                 flow_utils.writeFlow( flo_back_path,  _pflow)
