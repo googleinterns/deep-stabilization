@@ -6,7 +6,8 @@ from .gyro_function import (
     ProcessGyroData, QuaternionProduct, QuaternionReciprocal, 
     ConvertQuaternionToAxisAngle, FindOISAtTimeStamp, GetMetadata,
     GetProjections, GetVirtualProjection, GetForwardGrid,
-    CenterZoom, GetGyroAtTimeStamp
+    CenterZoom, GetGyroAtTimeStamp, get_static, ConvertAxisAngleToQuaternion,
+    ConvertAxisAngleToQuaternion_no_angle, ConvertQuaternionToAxisAngle_no_angle
     )
 
 def load_gyro_mesh(input_name):
@@ -15,23 +16,7 @@ def load_gyro_mesh(input_name):
     data["warping grid"] = np.reshape(data["warping grid"],(-1,int(w),int(h),4))
     return data
 
-def get_static():
-    static_options = {}
-    static_options["active_array_width"] = 4032
-    static_options["active_array_height"] = 3024
-    static_options["crop_window_width"] = 4032
-    static_options["crop_window_height"] = 2272
-    static_options["num_grid_rows"] = 12
-    static_options["num_grid_cols"] = 12
-    static_options["dim_homography"] = 9
-    static_options["width"] = 240  # frame width.
-    static_options["height"] = 135 # frame height
-    # static_options["fov"] = 1.27 # sensor_width/sensor_focal_length
-    static_options["cropping_ratio"] = 0.1 # normalized cropping ratio at each side. 
-    return static_options
-
-def get_grid(frame_data, quats_data, ois_data, virtual_data):
-    static_options = get_static()
+def get_grid(static_options, frame_data, quats_data, ois_data, virtual_data):
     grid = []
     result_poses = {}
     result_poses['virtual pose'] = virtual_data
@@ -43,7 +28,7 @@ def get_grid(frame_data, quats_data, ois_data, virtual_data):
     grid = np.array(grid)
     zoom_ratio = 1 / (1 - 2 * static_options["cropping_ratio"])
     curr_grid = CenterZoom(grid, zoom_ratio)
-    curr_grid = np.transpose(curr_grid,(0,3,2,1))
+    curr_grid = np.transpose(curr_grid,(0,3,2,1)) 
     return curr_grid
 
 def get_rotations(frame_data, quats_data, ois_data, num_frames):
@@ -56,8 +41,8 @@ def get_rotations(frame_data, quats_data, ois_data, num_frames):
     for i in range(num_frames):
         if i != 0:
             quat_dif = QuaternionProduct(quats[i,:], QuaternionReciprocal(quats[i-1,:])) 
-            [axis_dif_cur, angles_cur] = ConvertQuaternionToAxisAngle(quat_dif) 
-            rotations[i,:] = axis_dif_cur*angles_cur 
+            axis_dif_cur = ConvertQuaternionToAxisAngle_no_angle(quat_dif)
+            rotations[i,:] = axis_dif_cur
         lens_offsets[i,:] = FindOISAtTimeStamp(ois_data, frame_data[i, 4])     
 
     return rotations, lens_offsets
@@ -70,16 +55,19 @@ def visual_rotation(rotations_real, rotations_virtual, lens_offsets_real, lens_o
     plt.subplot(5,1,1)
     plt.plot(rotations_real[:,0], "g")
     plt.plot(rotations_virtual[:,0], "b")
+    plt.ylim(-0.02, 0.02)
     plt.xlabel('gyro x')
 
     plt.subplot(5,1,2)
     plt.plot(rotations_real[:,1], "g")
     plt.plot(rotations_virtual[:,1], "b")
+    plt.ylim(-0.02, 0.02)
     plt.xlabel('gyro y')
 
     plt.subplot(5,1,3)
     plt.plot(rotations_real[:,2], "g")
     plt.plot(rotations_virtual[:,2], "b")
+    plt.ylim(-0.02, 0.02)
     plt.xlabel('gyro z')
     
     plt.subplot(5,1,4)

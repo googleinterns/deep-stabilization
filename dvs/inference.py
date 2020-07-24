@@ -10,86 +10,140 @@ import yaml
 import argparse
 import numpy as np
 from printer import Printer
-from dataset import get_data_loader, get_virtual_data, get_inference_data_loader
+from dataset import get_data_loader, get_inference_data_loader
 from model import Model
 import datetime
 import copy
-from util import make_dir, get_optimizer, AverageMeter
-from gyro import get_grid, get_rotations, visual_rotation
+from util import make_dir, get_optimizer, AverageMeter, norm_flow
+from gyro import (
+    get_grid, 
+    get_rotations, 
+    visual_rotation, 
+    GetGyroAtTimeStamp, 
+    torch_ConvertQuaternionToAxisAngle, 
+    torch_ConvertAxisAngleToQuaternion
+    )
 from warp import warp_video
 
 def run(model, loader, cf, USE_CUDA=True):
     number_virtual, number_real = cf['data']["number_virtual"], cf['data']["number_real"]
     sample_freq = cf['data']["sample_freq"]
     avg_loss = AverageMeter()
+
     model.net.eval()
     for i, data in enumerate(loader, 0):
         # get the inputs; data is a list of [inputs, labels]
-        real_inputs, times = data
-        real_inputs = real_inputs.type(torch.float) #[b,60,84=21*4]
-        batch_size, step, dim = real_inputs.size()
-        virtual_queue = None
-        for j in range(step):
-            virtual_inputs = get_virtual_data(virtual_queue, times[:, j], batch_size, number_virtual, sample_freq) # [b,40=4*10]
+        real_inputs, times, flo, flo_back, real_projections, real_postion, real_queue_idx = data
+        print("Fininsh Load data")
 
-            inputs = torch.cat((real_inputs[:,j,:],virtual_inputs), dim = 1)
-            inputs = Variable(inputs)
+        real_inputs = real_inputs.type(torch.float) #[b,60,84=21*4]
+        real_projections = real_projections.type(torch.float) 
+        flo = flo.type(torch.float) 
+        flo_back = flo_back.type(torch.float) 
+
+        batch_size, step, dim = real_inputs.size()
+        times = times.numpy()
+        real_queue_idx = real_queue_idx.numpy()
+        virtual_queue = [None] * batch_size
+        losses = [0]
+        model.net.init_hidden(batch_size)
+        for j in range(step):
+            # if j > 25:
+            #     break
+            if (j+1) % 10 == 0:
+                print("Step: "+str(j+1)+"/"+str(step))
+            virtual_inputs, vt_1 = loader.dataset.get_virtual_data(virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, sample_freq) # [b,40=4*10]
+            
+            real_inputs_step = real_inputs[:,j,:]
+            # inputs = torch.cat((real_inputs_step,virtual_inputs), dim = 1) 
+            inputs = Variable(real_inputs_step)
             if USE_CUDA:
-                real_inputs_step = real_inputs[:,j,4*number_real:4*number_real+4].cuda()
+                real_inputs_step = real_inputs_step.cuda()
                 virtual_inputs = virtual_inputs.cuda()
                 inputs = inputs.cuda()
+                flo_step = flo[:,j].cuda()
+                flo_back_step = flo_back[:,j].cuda()
+                vt_1 = vt_1.cuda()
+                real_projections_t = real_projections[:,j+1].cuda()
+                real_projections_t_1 = real_projections[:,j].cuda()
+                real_postion_step = real_postion[:,j].cuda()
+
+            b, h, w, _ = flo_step.size()
+            flo_step = norm_flow(flo_step, h, w)
+            flo_back_step = norm_flow(flo_back_step, h, w)
 
             with torch.no_grad():
                 out = model.net(inputs)
+                if j == 0:
+                    out = model.net(inputs)
+                    out = model.net(inputs)
+                    out = model.net(inputs)
+                # print(inputs)
         
-            loss = model.loss(out, virtual_inputs, real_inputs_step)
-
+            loss = model.loss(out, vt_1, virtual_inputs, real_inputs_step, flo_step, flo_back_step, real_projections_t, real_projections_t_1, real_postion_step)
             avg_loss.update(loss.item(), batch_size) 
             
             if USE_CUDA:
-                out = out.cpu()
-            out = out.detach().numpy()
+                # out = real_inputs_step[:,40:44]
+                # out = torch_ConvertQuaternionToAxisAngle(torch_ConvertAxisAngleToQuaternion(out))
+                out = out.cpu().detach().numpy() 
+                real = real_inputs_step[:,40:44].cpu().detach().numpy()
+                # print(j)
+                # print(inputs.cpu().detach().numpy())
+                # print(out)
+                # print(real)
+                real_postion_step = real_postion_step.cpu().numpy()
+                # out = real
+                # out = np.array([[0,0,0,0]])
+                losses.append(loss.cpu().detach().numpy())
+                # print(losses[-1])
 
-            virtual_data = np.zeros((batch_size, 5)) # [time, quat]
-            virtual_data[:,0] = times[:,j]
-            virtual_data[:,1:] = out
-            virtual_data = np.expand_dims(virtual_data, axis = 1)
+            virtual_queue = loader.dataset.update_virtual_queue(batch_size, virtual_queue, out, times[:,j+1], real_postion_step)
 
-            if virtual_queue is None:
-                virtual_queue = virtual_data
-            else:
-                virtual_queue = np.concatenate((virtual_queue, virtual_data), axis = 1)
-    return avg_loss.avg, np.squeeze(virtual_queue, axis=0)
+    return avg_loss.avg, np.squeeze(virtual_queue, axis=0), losses
+
 
 def inference(cf, model, data_path, USE_CUDA):
     print("-----------Load Dataset----------")
     test_loader = get_inference_data_loader(cf, data_path)
+    data = test_loader.dataset.data[0]
 
     start_time = time.time()
-    test_loss, virtual_queue = run(model, test_loader, cf, USE_CUDA=USE_CUDA)
+    loss, virtual_queue, losses = run(model, test_loader, cf, USE_CUDA=USE_CUDA)
+
+    virtual_data = np.zeros((1,5))
+    # virtual_data[:,1:] = GetGyroAtTimeStamp(data.gyro, data.frame[0,0])
+    virtual_data[:,1:] = virtual_queue[0, 1:]
+    virtual_data[:,0] = data.frame[0,0]
+    virtual_queue = np.concatenate((virtual_data, virtual_queue), axis = 0)
+
+    # virtual_queue = np.concatenate((virtual_queue[:1], virtual_queue), axis = 0)
+    # virtual_queue[0,0] = data.frame[0,0]
+
+    print(virtual_queue.shape)
     time_used = (time.time() - start_time) / 60
-    print("TestLoss: %.4f | Time_used: %.4f minutes" % (test_loss, time_used))
+
+    print("TestLoss: %.4f | Time_used: %.4f minutes" % (loss, time_used))
     
     video_name = data_path.split("/")[-1]
     virtual_path = os.path.join("./test", cf['data']['exp'], video_name+'.txt')
     np.savetxt(virtual_path, virtual_queue, delimiter=' ')
     # virtual_queue = np.loadtxt(virtual_path)
 
-    data = test_loader.dataset.data[0]
-
     print("------Start Visual Result--------")
-    rotations_real, lens_offsets_real = get_rotations(data.frame, data.gyro, data.ois, data.length)
-    rotations_virtual, lens_offsets_virtual = get_rotations(data.frame, virtual_queue, np.zeros(data.ois.shape), data.length)
-
+    rotations_virtual, lens_offsets_virtual = get_rotations(data.frame[:data.length], virtual_queue, np.zeros(data.ois.shape), data.length)
+    rotations_real, lens_offsets_real = get_rotations(data.frame[:data.length], data.gyro, data.ois, data.length)
+    
     path = os.path.join("./test", cf['data']['exp'], video_name+'.jpg')
     visual_rotation(rotations_real, rotations_virtual, lens_offsets_real, lens_offsets_virtual, path)
 
+    # data.length = 300
     print("------Start Warping Video--------")
-    grid = get_grid(data.frame, data.gyro, data.ois, virtual_queue[:,1:])
-    print(grid.shape)
+    grid = get_grid(data.static_options, data.frame[:data.length], data.gyro, data.ois, virtual_queue[:data.length,1:])
+
     video_path = os.path.join(data_path, video_name+".mp4")
     save_path = os.path.join("./test", cf['data']['exp'], video_name+'_stab.mp4')
-    warp_video(grid, video_path, save_path)
+    warp_video(grid, video_path, save_path, losses = losses[:data.length])
     return
 
 def main(args = None):
@@ -124,6 +178,7 @@ def main(args = None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Training model")
     parser.add_argument("--config", default="./conf/sample.yaml", help="Config file.")
-    parser.add_argument("--dir_path", default="/home/zhmeishi_google_com/dataset/Google/test/")
+    parser.add_argument("--dir_path", default="/mnt/disks/dataset/Google/test/")
+    # parser.add_argument("--dir_path", default="/home/zhmeishi_google_com/dvs/data/testdata/videos_with_zero_virtual_motion/inputs_no_rotation")
     args = parser.parse_args()
     main(args = args)

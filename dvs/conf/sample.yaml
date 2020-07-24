@@ -1,0 +1,55 @@
+data:
+  exp: 'sample'
+  checkpoints_dir: './checkpoint'
+  log: './log'
+  data_dir: '/mnt/disks/dataset/Google/'           
+  use_cuda: true
+  batch_size: 100
+  resize_ratio: 0.25
+  number_real: 10
+  number_virtual: 10
+  time_train: 1000  # ms
+  sample_freq: 20   # ms
+  channel_size: 1
+  num_workers: 16                    # num_workers for data_loader
+model:
+  load_model: null # "./checkpoint/long_large_begin_end_follow_undefine/long_large_begin_end_follow_undefine_last.checkpoint"                  # checkpoint path
+  cnn:
+    activate_function: relu         # sigmoid, relu, tanh, quadratic
+    batch_norm: true
+    gap: false
+    layers:
+  rnn:
+    layers:  
+    - - 256                         # last layer should be equal to nr_class
+      - true   
+    - - 256                         # last layer should be equal to nr_class
+      - true  
+  fc:
+    activate_function: relu
+    batch_norm: false               # (batch_norm and drop_out) is False
+    layers:  
+    - - 256                         # last layer should be equal to nr_class
+      - true  
+    - - 4                         # last layer should be equal to nr_class
+      - true
+    drop_out: 0
+train:
+  optimizer: "adam"                  # adam or sgd
+  momentum: 0.9                     # for sgd
+  decay_epoch: null
+  epoch: 80
+  snapshot: 2
+  init_lr: 0.0002
+  lr_decay: 0
+  lr_step: null                       # if > 0 decay_epoch should be null
+  seed: 1
+  weight_decay: 0.0001
+  clip_norm: False
+  init: "xavier_uniform"            # xavier_uniform or xavier_normal
+loss:
+  smooth: 1
+  c2_smooth: 2
+  follow: 10
+  angle: 2
+  undefine: 1

@@ -10,7 +10,23 @@ from .gyro_function import (
     GetVirtualProjection,
     GetForwardGrid,
     CenterZoom,
-    GetWarpingFlow
+    GetWarpingFlow,
+    torch_norm_quat,
+    torch_QuaternionProduct, 
+    torch_QuaternionReciprocal,
+    torch_GetVirtualProjection,
+    get_static,
+    torch_GetForwardGrid,
+    torch_GetWarpingFlow,
+    train_GetGyroAtTimeStamp,
+    train_ConvertQuaternionToAxisAngle,
+    ConvertAxisAngleToQuaternion,
+    torch_ConvertAxisAngleToQuaternion,
+    torch_ConvertQuaternionToAxisAngle,
+    ConvertAxisAngleToQuaternion_no_angle,
+    ConvertQuaternionToAxisAngle_no_angle,
+    torch_GetHomographyTransformFromProjections,
+    torch_ApplyTransform
     )
 from .gyro_io import (
     LoadGyroData, 
@@ -19,6 +35,5 @@ from .gyro_io import (
     LoadStabResult,
     get_grid, 
     get_rotations, 
-    visual_rotation,
-    get_static
+    visual_rotation
     )

@@ -434,3 +434,29 @@ class Google(data.Dataset):
     def __len__(self):
         return self.size * self.replicates
 
+'''
+import argparse
+import sys, os
+import importlib
+from scipy.misc import imsave
+import numpy as np
+
+import datasets
+reload(datasets)
+
+parser = argparse.ArgumentParser()
+args = parser.parse_args()
+args.inference_size = [1080, 1920]
+args.crop_size = [384, 512]
+args.effective_batch_size = 1
+
+index = 500
+v_dataset = datasets.MpiSintelClean(args, True, root='../MPI-Sintel/flow/training')
+a, b = v_dataset[index]
+im1 = a[0].numpy()[:,0,:,:].transpose(1,2,0)
+im2 = a[0].numpy()[:,1,:,:].transpose(1,2,0)
+imsave('./img1.png', im1)
+imsave('./img2.png', im2)
+flow_utils.writeFlow('./flow.flo', b[0].numpy().transpose(1,2,0))
+
+'''

@@ -1,7 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os.path
-import cv2
 
 TAG_CHAR = np.array([202021.25], np.float32)
 
@@ -203,21 +202,3 @@ def make_color_wheel():
 	colorwheel[col:col + MR, 0] = 255
 
 	return colorwheel
-
-if __name__ == "__main__":
-    p = "/home/zhmeishi_google_com/optical_flow/flownet2-pytorch/work/inference/run.epoch-0-flow-field/000000.flo"
-    flo = readFlow(p)
-    print(flo.shape)
-    shape = [3, flo.shape[0], flo.shape[1]]
-    f = np.ones(shape)*0.8
-    u = flo[:,:,0]
-    v = flo[:,:,1]
-    u = u-np.min(u)
-    v = v-np.min(v)
-    f[2] = u/np.max(u)*2
-    f[1] = v/np.max(v)*2
-    f = np.transpose(f, (1,2,0))
-
-    f = np.clip(f*255, 0, 255).astype("uint8")
-    cv2.imwrite("flownet.jpg", f) 
-

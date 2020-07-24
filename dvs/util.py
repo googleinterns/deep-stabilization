@@ -1,5 +1,6 @@
 import os
 import torch
+import cv2
 
 def save_train_info(name, checkpoints_dir, cf, model, count, optimizer = None):
     path = None
@@ -49,3 +50,8 @@ class AverageMeter(object):
         self.cnt += n
         if self.cnt > 0:
             self.avg = self.sum / self.cnt
+
+def norm_flow(flow, h, w):
+    flow[:,:,:,0] /= h
+    flow[:,:,:,1] /= w
+    return flow

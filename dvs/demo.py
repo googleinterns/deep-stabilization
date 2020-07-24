@@ -115,8 +115,8 @@ def EndToEndDemo(gyro_log_name, ois_log_name, frame_log_name, result_poses_name)
     curr_grid = np.transpose(curr_grid,(0,3,2,1))
     ref_grid = np.reshape(result_poses['warping grid'],(-1,12,12,4))
 
-    print(np.sum(np.abs(ref_grid - curr_grid)))
-    print(np.sum(np.abs(ref_grid) + np.abs(curr_grid)))
+    # print(np.sum(np.abs(ref_grid - curr_grid)))
+    # print(np.sum(np.abs(ref_grid) + np.abs(curr_grid)))
 
     # Step 3: generate frame to frame flow.
     for i in range(179,num_frames):
@@ -128,6 +128,9 @@ def EndToEndDemo(gyro_log_name, ois_log_name, frame_log_name, result_poses_name)
         backward_flow = GetWarpingFlow(
             real_projections_curr,real_projections_prev, len(real_projections_curr),len(real_projections_prev), 
             static_options["width"],static_options["height"])
+        print(forward_flow.shape)
+        print(backward_flow)
+        return
         plt.subplot(1,2,1)
         VisualizeFlow(forward_flow)
         plt.xlim(0, 1)
@@ -147,10 +150,10 @@ def VisualizeFlow(flow):
     plt.plot(flow[2::4],flow[3::4],'g.')
 
 if __name__ == "__main__":
-    drive = "/home/zhmeishi_google_com/dataset/Google/test/"
+    drive = "/mnt/disks/dataset/Google/test/"
     gyro_name = drive + 's2_outdoor_runing_forward_VID_20200304_144434/gyro_log_144425_189635.txt'
     ois_name = drive + 's2_outdoor_runing_forward_VID_20200304_144434/ois_log_144425_189635.txt'
     frame_name = drive + 's2_outdoor_runing_forward_VID_20200304_144434/frame_timestamps_144425_189635.txt'
     result = '/home/zhmeishi_google_com/dvs/data/testdata/results_updated/s2_outdoor_runing_forward_VID_20200304_144434_stab_mesh.txt'
-    GyroPlotDemo(gyro_name, ois_name, frame_name)
-    # EndToEndDemo(gyro_name, ois_name, frame_name, result)
+    # GyroPlotDemo(gyro_name, ois_name, frame_name)
+    EndToEndDemo(gyro_name, ois_name, frame_name, result)
