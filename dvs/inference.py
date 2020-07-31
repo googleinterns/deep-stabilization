@@ -21,7 +21,8 @@ from gyro import (
     visual_rotation, 
     GetGyroAtTimeStamp, 
     torch_ConvertQuaternionToAxisAngle, 
-    torch_ConvertAxisAngleToQuaternion
+    torch_ConvertAxisAngleToQuaternion,
+    torch_QuaternionProduct
     )
 from warp import warp_video
 
@@ -33,13 +34,14 @@ def run(model, loader, cf, USE_CUDA=True):
     model.net.eval()
     for i, data in enumerate(loader, 0):
         # get the inputs; data is a list of [inputs, labels]
-        real_inputs, times, flo, flo_back, real_projections, real_postion, real_queue_idx = data
+        real_inputs, times, flo, flo_back, real_projections, real_postion, ois, real_queue_idx = data
         print("Fininsh Load data")
 
         real_inputs = real_inputs.type(torch.float) #[b,60,84=21*4]
         real_projections = real_projections.type(torch.float) 
         flo = flo.type(torch.float) 
         flo_back = flo_back.type(torch.float) 
+        ois = ois.type(torch.float)
 
         batch_size, step, dim = real_inputs.size()
         times = times.numpy()
@@ -52,53 +54,71 @@ def run(model, loader, cf, USE_CUDA=True):
             #     break
             if (j+1) % 10 == 0:
                 print("Step: "+str(j+1)+"/"+str(step))
-            virtual_inputs, vt_1 = loader.dataset.get_virtual_data(virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, sample_freq) # [b,40=4*10]
-            
+            virtual_inputs, vt_1 = loader.dataset.get_virtual_data(
+                virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, real_postion[:,j], sample_freq) 
             real_inputs_step = real_inputs[:,j,:]
-            # inputs = torch.cat((real_inputs_step,virtual_inputs), dim = 1) 
-            inputs = Variable(real_inputs_step)
+            inputs = torch.cat((real_inputs_step,virtual_inputs), dim = 1) 
+            # inputs = Variable(real_inputs_step)
             if USE_CUDA:
                 real_inputs_step = real_inputs_step.cuda()
                 virtual_inputs = virtual_inputs.cuda()
                 inputs = inputs.cuda()
-                flo_step = flo[:,j].cuda()
-                flo_back_step = flo_back[:,j].cuda()
+                # flo_step = flo[:,j].cuda()
+                # flo_back_step = flo_back[:,j].cuda()
+                flo_step = None
+                flo_back_step = None
                 vt_1 = vt_1.cuda()
                 real_projections_t = real_projections[:,j+1].cuda()
                 real_projections_t_1 = real_projections[:,j].cuda()
                 real_postion_step = real_postion[:,j].cuda()
+                ois_step = ois[:,j].cuda()
 
-            b, h, w, _ = flo_step.size()
-            flo_step = norm_flow(flo_step, h, w)
-            flo_back_step = norm_flow(flo_back_step, h, w)
+            # b, h, w, _ = flo_step.size()
+            # flo_step = norm_flow(flo_step, h, w)
+            # flo_back_step = norm_flow(flo_back_step, h, w)
 
+            # print(inputs)
             with torch.no_grad():
-                out = model.net(inputs)
-                if j == 0:
-                    out = model.net(inputs)
-                    out = model.net(inputs)
-                    out = model.net(inputs)
+                # flo_out = model.unet(flo_step, flo_back_step)
+                flo_out = None
+                # out = model.net(inputs, flo_out, ois_step)
+                # print("==")
+                # print(out )
+                # print(real_inputs_step[:,40:44])
+                # print((real_postion_step))
+                if j < 1:
+                    for i in range(10):
+                        out = model.net(inputs, flo_out, ois_step)
+                else:
+                    out = model.net(inputs, flo_out, ois_step)
                 # print(inputs)
-        
-            loss = model.loss(out, vt_1, virtual_inputs, real_inputs_step, flo_step, flo_back_step, real_projections_t, real_projections_t_1, real_postion_step)
+            # out[:,:3] *= 0
+            # out[:,3] /= out[:,3]
+            # real = real_inputs_step[:,40:44]
+
+            # print("======")
+            # print(virtual_inputs)
+            # print(out)
+            
+            loss = model.loss(out, vt_1, virtual_inputs, real_inputs_step, flo_step, flo_back_step, real_projections_t, real_projections_t_1, real_postion_step, undefine = True)
             avg_loss.update(loss.item(), batch_size) 
             
+            virtual_position = virtual_inputs[:, -4:]
+            # if j % 50 > 100:
+            out = torch_QuaternionProduct(out, virtual_position)
+            out = torch_QuaternionProduct(out, real_postion_step) # [0.001, 0, 0, 1], [0, 0, 0, 1]
             if USE_CUDA:
-                # out = real_inputs_step[:,40:44]
-                # out = torch_ConvertQuaternionToAxisAngle(torch_ConvertAxisAngleToQuaternion(out))
                 out = out.cpu().detach().numpy() 
                 real = real_inputs_step[:,40:44].cpu().detach().numpy()
                 # print(j)
                 # print(inputs.cpu().detach().numpy())
                 # print(out)
                 # print(real)
-                real_postion_step = real_postion_step.cpu().numpy()
-                # out = real
-                # out = np.array([[0,0,0,0]])
                 losses.append(loss.cpu().detach().numpy())
                 # print(losses[-1])
+            # print(out)
 
-            virtual_queue = loader.dataset.update_virtual_queue(batch_size, virtual_queue, out, times[:,j+1], real_postion_step)
+            virtual_queue = loader.dataset.update_virtual_queue(batch_size, virtual_queue, out, times[:,j+1])
 
     return avg_loss.avg, np.squeeze(virtual_queue, axis=0), losses
 
@@ -139,7 +159,8 @@ def inference(cf, model, data_path, USE_CUDA):
 
     # data.length = 300
     print("------Start Warping Video--------")
-    grid = get_grid(data.static_options, data.frame[:data.length], data.gyro, data.ois, virtual_queue[:data.length,1:])
+    grid = get_grid(test_loader.dataset.static_options, \
+        data.frame[:data.length], data.gyro, data.ois, virtual_queue[:data.length,1:])
 
     video_path = os.path.join(data_path, video_name+".mp4")
     save_path = os.path.join("./test", cf['data']['exp'], video_name+'_stab.mp4')
@@ -168,6 +189,7 @@ def main(args = None):
                 
     if USE_CUDA:
         model.net.cuda()
+        model.unet.cuda()
 
     data_name = sorted(os.listdir(dir_path))
     for i in range(len(data_name)):

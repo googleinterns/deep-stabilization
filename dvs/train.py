@@ -15,6 +15,7 @@ from model import Model
 import datetime
 import copy
 from util import make_dir, get_optimizer, AverageMeter, save_train_info, norm_flow
+from gyro import torch_QuaternionProduct
 
 def run_epoch(model, loader, cf, epoch, lr, optimizer=None, is_training=True, USE_CUDA=True, clip_norm=0):
     number_virtual, number_real = cf['data']["number_virtual"], cf['data']["number_real"]
@@ -26,13 +27,14 @@ def run_epoch(model, loader, cf, epoch, lr, optimizer=None, is_training=True, US
         model.net.eval()
     for i, data in enumerate(loader, 0):
         # get the inputs; data is a list of [inputs, labels]
-        real_inputs, times, flo, flo_back, real_projections, real_postion, real_queue_idx = data
+        real_inputs, times, flo, flo_back, real_projections, real_postion, ois, real_queue_idx = data
         print("Fininsh Load data")
 
         real_inputs = real_inputs.type(torch.float) #[b,60,84=21*4]
         real_projections = real_projections.type(torch.float) 
         flo = flo.type(torch.float) 
         flo_back = flo_back.type(torch.float) 
+        ois = ois.type(torch.float) 
 
         batch_size, step, dim = real_inputs.size()
         times = times.numpy()
@@ -43,33 +45,52 @@ def run_epoch(model, loader, cf, epoch, lr, optimizer=None, is_training=True, US
         for j in range(step):
             if (j+1) % 10 == 0:
                 print("Step: "+str(j+1)+"/"+str(step))
-            virtual_inputs, vt_1 = loader.dataset.get_virtual_data(virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, sample_freq) # [b,40=4*10]
-            
+            virtual_inputs, vt_1 = loader.dataset.get_virtual_data(
+                virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, real_postion[:,j], sample_freq) 
+
             real_inputs_step = real_inputs[:,j,:]
-            # inputs = torch.cat((real_inputs_step,virtual_inputs), dim = 1) 
-            inputs = Variable(real_inputs_step)
+            inputs = torch.cat((real_inputs_step,virtual_inputs), dim = 1) 
+
+            # inputs = Variable(real_inputs_step)
             if USE_CUDA:
                 real_inputs_step = real_inputs_step.cuda()
                 virtual_inputs = virtual_inputs.cuda()
                 inputs = inputs.cuda()
-                flo_step = flo[:,j].cuda()
-                flo_back_step = flo_back[:,j].cuda()
+                # flo_step = flo[:,j].cuda()
+                # flo_back_step = flo_back[:,j].cuda()
+                flo_step = None
+                flo_back_step = None
                 vt_1 = vt_1.cuda()
                 real_projections_t = real_projections[:,j+1].cuda()
                 real_projections_t_1 = real_projections[:,j].cuda()
                 real_postion_step = real_postion[:,j].cuda()
+                ois_step = ois[:,j].cuda()
 
-            b, h, w, _ = flo_step.size()
-            flo_step = norm_flow(flo_step, h, w)
-            flo_back_step = norm_flow(flo_back_step, h, w)
+            # b, h, w, _ = flo_step.size()
+            # flo_step = norm_flow(flo_step, h, w)
+            # flo_back_step = norm_flow(flo_back_step, h, w)
 
             if is_training:
-                out = model.net(inputs)
+                # flo = process(flo) also flo_back
+                # only input inside part.
+                # the same as generate virtual flow. 
+                # using OIS data and flow data
+                # flo_out = model.unet(flo_step, flo_back_step)
+                flo_out = None
+                out = model.net(inputs, flo_out, ois_step)
+                # if j == 0:
+                #     for i in range(5):
+                #         out = model.net(inputs, flo_out, ois_step)
             else:
                 with torch.no_grad():
-                    out = model.net(inputs)
+                    # flo_out = model.unet(flo_step, flo_back_step)
+                    flo_out = None
+                    out = model.net(inputs, flo_out, ois_step)
+                    # if j == 0:
+                    #     for i in range(5):
+                    #         out = model.net(inputs, flo_out, ois_step)
 
-            if j < step - 4 and j > 3:
+            if j < step - 3 and j > 2:
                 follow = False
             else:
                 follow = True
@@ -78,19 +99,24 @@ def run_epoch(model, loader, cf, epoch, lr, optimizer=None, is_training=True, US
                 undefine = True
             else:
                 undefine = False
+            
             loss += model.loss(out, vt_1, virtual_inputs, real_inputs_step, \
                 flo_step, flo_back_step, real_projections_t, real_projections_t_1, real_postion_step, \
                 follow = follow, undefine = undefine)
             
+            virtual_position = virtual_inputs[:, -4:]
+            pos = torch_QuaternionProduct(virtual_position, real_postion_step)
+            out = torch_QuaternionProduct(out, pos)
+
             if USE_CUDA:
                 out = out.cpu().detach().numpy() 
-                real_postion_step = real_postion_step.cpu().numpy()
                 # print(j)
                 # print(inputs.cpu().detach().numpy())
                 # print(out)
                 # print(real_inputs_step[:,40:44].cpu().detach().numpy())
+                
 
-            virtual_queue = loader.dataset.update_virtual_queue(batch_size, virtual_queue, out, times[:,j+1], real_postion_step)
+            virtual_queue = loader.dataset.update_virtual_queue(batch_size, virtual_queue, out, times[:,j+1])
 
         if is_training:
             optimizer.zero_grad()
@@ -150,13 +176,20 @@ def train(args = None):
         checkpoint = torch.load(load_model)
         model.net.load_state_dict(checkpoint['state_dict'])
         print("------Resume Training Process-----")
+        optimizer.load_state_dict(checkpoint['optim_dict'])
         epoch_load = checkpoint['epoch']
         print("Epoch load: ", epoch_load)
     else:
-        epoch_load = 1
+        epoch_load = 0
                 
     if USE_CUDA:
         model.net.cuda()
+        model.unet.cuda()
+        if load_model is not None:
+            for state in optimizer.state.values():
+                for k, v in state.items():
+                    if isinstance(v, torch.Tensor):
+                        state[k] = v.cuda()
 
     print("-----------Load Dataset----------")
     train_loader, test_loader = get_data_loader(cf)
@@ -172,7 +205,7 @@ def train(args = None):
     
     lr = init_lr
 
-    for count in range(epoch_load, epochs+1):
+    for count in range(epoch_load+1, epochs+1):
         if decay_epoch != None and count in decay_epoch:
             lr *= lr_decay
             for param in optimizer.param_groups:

@@ -148,9 +148,11 @@ def visialize(save_path, image1_path, image2_path, grid1, grid2):
 
     image=Image.fromarray(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
     draw = ImageDraw.Draw(image)
-    # (x, y) = (10, 10)
+    
     for i in range(len(grid1)):
-        draw.line(xy = (grid1[i],grid2[i]), fill = (255,0,0), width = 5)
+        p1 = (grid1[i,0], grid1[i,1])
+        p2 = (grid2[i,0], grid2[i,1])
+        draw.line(xy = (p1,p2), fill = (255,0,0), width = 5)
     image = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
     cv2.imwrite(save_path, image) 
