@@ -26,7 +26,8 @@ from .gyro_function import (
     ConvertAxisAngleToQuaternion_no_angle,
     ConvertQuaternionToAxisAngle_no_angle,
     torch_GetHomographyTransformFromProjections,
-    torch_ApplyTransform
+    torch_ApplyTransform,
+    norm_quat
     )
 from .gyro_io import (
     LoadGyroData, 

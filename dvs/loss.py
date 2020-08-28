@@ -17,8 +17,6 @@ from gyro import (
     torch_GetHomographyTransformFromProjections,
     torch_ApplyTransform
 )
-from read_write import visialize
-        
         
 class C2_Smooth_loss(torch.nn.Module):
     def __init__(self):
@@ -30,7 +28,8 @@ class C2_Smooth_loss(torch.nn.Module):
         # Rt_1 = torch_ConvertAxisAngleToQuaternion(Qt_1)
         # Rt_2 = torch_ConvertAxisAngleToQuaternion(Qt_2)
         # detaQt = torch_QuaternionProduct(Qt, torch_QuaternionReciprocal(Qt_1))  
-        detaQt_1 = torch_QuaternionProduct(Qt_1, torch_QuaternionReciprocal(Qt_2))  
+        detaQt_1 = torch_QuaternionProduct(Qt_1, torch_QuaternionReciprocal(Qt_2))
+        # print(Qt[0],Qt_1[0],Qt_2[0],detaQt_1[0])  
         return self.MSE(Qt, detaQt_1)
 
 class C1_Smooth_loss(torch.nn.Module):
@@ -78,6 +77,7 @@ class Optical_loss(torch.nn.Module):
     def __init__(self):
         super(Optical_loss, self).__init__()
         self.static_options = get_static()
+        self.mesh = get_mesh()
 
     def forward(self, Vt, Vt_1, flo, flo_back, real_projection_t, real_projection_t_1):
         virtual_projection_t = torch_GetVirtualProjection(self.static_options, Vt) 
@@ -91,77 +91,40 @@ class Optical_loss(torch.nn.Module):
         grid_t_1 = torch_GetForwardGrid(self.static_options, real_projection_t_1, virtual_projection_t_1)[:,:2,:,:].permute(0,1,3,2) 
         grid_t_1 = torch.nn.functional.upsample_bilinear(grid_t_1, size = (h, w)) # [B,C(xy),H,W]
 
-        # real = torch_GetWarpingFlow(self.static_options, real_projection_t_1, real_projection_t)[:,:2,:,:]
-        # real = torch.nn.functional.upsample_bilinear(real, size = (h, w))
-
-        mesh = get_mesh(b, h, w)
-
-        flo = flo + mesh
+        # grid_f = torch_GetForwardGrid(self.static_options, real_projection_t_1, real_projection_t[:,0,:,:])[:,:2,:,:].permute(0,1,3,2)
+        # grid_f = torch.nn.functional.upsample_bilinear(grid_f, size = (h, w)).permute(0,2,3,1)
+        
+        # grid_b = torch_GetForwardGrid(self.static_options, real_projection_t, real_projection_t_1[:,0,:,:])[:,:2,:,:].permute(0,1,3,2)  
+        # grid_b = torch.nn.functional.upsample_bilinear(grid_b, size = (h, w)).permute(0,2,3,1)
+        # shift = torch.tensor([0.25/h,0.25/w])[None, None, :].cuda()
+        
+        mesh = self.mesh.repeat(b, 1, 1, 1)
+        flo = flo + mesh 
         flo_back = flo_back + mesh # [B,H,W,C]
 
-        # self.visualize_figure("flo.png", mesh, flo)
-        # assert(False)
-
         valid = (flo[:,:,:,0] > 0) * (flo[:,:,:,1] > 0) * (flo[:,:,:,0] < 1) * (flo[:,:,:,1] < 1)
+        valid_f = torch.unsqueeze(valid, dim = 3).type(torch.cuda.FloatTensor)
         valid = torch.unsqueeze(valid, dim = 1).type(torch.cuda.FloatTensor)
 
         valid_back = (flo_back[:,:,:,0] > 0) * (flo_back[:,:,:,1] > 0) * (flo_back[:,:,:,0] < 1) * (flo_back[:,:,:,1] < 1)
+        valid_back_f = torch.unsqueeze(valid_back, dim = 3).type(torch.cuda.FloatTensor) 
         valid_back = torch.unsqueeze(valid_back, dim = 1).type(torch.cuda.FloatTensor) # [B,C,H,W]
 
-        flo = flo * 2 - 1
-        flo_back = flo_back * 2 - 1
+        flo = (flo * 2 - 1) * valid_f
+        flo_back = (flo_back * 2 - 1) * valid_back_f
 
-        forward_t = torch.nn.functional.grid_sample(grid_t, flo) # default bilinear
-        backward_t_1 = torch.nn.functional.grid_sample(grid_t_1, flo_back) # default bilinear
-
+        forward_t = torch.nn.functional.grid_sample(grid_t, flo, padding_mode="reflection") # default bilinear
+        backward_t_1 = torch.nn.functional.grid_sample(grid_t_1, flo_back, padding_mode="reflection") # default bilinear
 
         forward_diff = ((forward_t - grid_t_1) * valid) ** 2 
         backward_diff = ((backward_t_1 - grid_t) * valid_back) ** 2
 
         forward_loss = torch.sum(forward_diff, dim = (1,2,3)) / torch.sum(valid, dim = (1,2,3))
         backward_loss = torch.sum(backward_diff, dim = (1,2,3)) / torch.sum(valid_back, dim = (1,2,3))
-        
         return torch.sum(forward_loss + backward_loss) / b
 
 
-    def visualize_figure(self, save_path, grid1, grid2):
-        grid1 = self.sample_data(grid1)
-        grid2 = self.sample_data(grid2, second = True)
-        p1 = "/mnt/disks/dataset/Google/train/s2_outdoor_runing_forward_VID_20200304_144434/frames/frame_0000.png"
-        p2 = "/mnt/disks/dataset/Google/train/s2_outdoor_runing_forward_VID_20200304_144434/frames/frame_0001.png"
-        visialize(save_path,p1,p2, grid1, grid2)
-
-    def sample_data(self, flow, h = 1080, w = 1920 ,second = False):
-        flow = flow[0].cpu().numpy()[27:250:27,48:440:48,:]
-        flow = np.reshape(flow, (-1, 2))
-        flow[:,0] = flow[:,0] * w 
-        flow[:,1] = flow[:,1] * h
-        if second:
-            flow[:,1] += h 
-        flow = flow.astype(np.int)
-        return flow
-
-    def visualize_point(self, forward_t, grid_t_1, backward_t_1, grid_t):
-        forward_t = self.sample_data(forward_t)
-        grid_t_1 = self.sample_data(grid_t_1)
-        backward_t_1 = self.sample_data(backward_t_1)
-        grid_t = self.sample_data(grid_t)
-        plt.clf()
-        plt.subplot(1,2,1)
-        plt.plot(forward_t[:,0],forward_t[:,1],'r.')
-        plt.plot(grid_t_1[:,0],grid_t_1[:,1],'g.')
-        plt.xlim(0, 1)
-        plt.ylim(0, 1)
-        plt.title('forward flow frame ')
-        plt.subplot(122)
-        plt.plot(backward_t_1[:,0],backward_t_1[:,1],'r.')
-        plt.plot(grid_t[:,0],grid_t[:,1],'g.')
-        plt.xlim(0, 1)
-        plt.ylim(0, 1)
-        plt.title('backward flow frame ')
-        plt.savefig("./no_virtual_warp_follow.jpg")
-
-def get_mesh(batch, height, width, USE_CUDA = True):
+def get_mesh(height = 270, width = 480, USE_CUDA = True):
     xs = np.linspace(0, 1, width, endpoint = False) + 0.5 / height
     ys = np.linspace(0, 1, height, endpoint = False) + 0.5 / width
     xmesh, ymesh = np.meshgrid(xs, ys)
@@ -169,64 +132,48 @@ def get_mesh(batch, height, width, USE_CUDA = True):
     mesh = torch.Tensor(np.expand_dims(np.moveaxis(np.array(list(zip(xmesh, ymesh))), 1, 2),axis=0))
     if USE_CUDA:
         mesh = mesh.cuda()
-    return mesh.repeat(batch, 1, 1, 1)
+    return mesh
 
 class Undefine_loss(torch.nn.Module):
-    def __init__(self):
+    def __init__(self, ratio = 0.08, USE_CUDA = True):
         super(Undefine_loss, self).__init__()
         self.static_options = get_static() 
-
-    def forward(self, Vt, real_projection_t, ratio = 0.05,  USE_CUDA = True):
-        batch_size = Vt.size()[0]
         width = self.static_options["width"]
         height = self.static_options["height"]
+        x0, x1, y0, y1 = \
+            int(width*ratio), int(width*(1-ratio)), int(height*ratio), int(height*(1-ratio))
+        self.norm = torch.Tensor([width, height, 1])
+        self.p00 = torch.Tensor([x0, y0, 1])
+        self.p01 = torch.Tensor([x0, y1, 1])
+        self.p10 = torch.Tensor([x1, y0, 1])
+        self.p11 = torch.Tensor([x1, y1, 1])
+        if USE_CUDA == True:
+            self.p00 = self.p00.cuda()
+            self.p01 = self.p01.cuda()
+            self.p10 = self.p10.cuda()
+            self.p11 = self.p11.cuda()
+            self.norm = self.norm.cuda()
+
+    def forward(self, Vt, Rt):
+        batch_size = Vt.size()[0]
 
         row_mid = self.static_options["num_grid_rows"] // 2
         virtual_projection_t = torch_GetVirtualProjection(self.static_options, Vt) 
-        
-        # grid_t = torch_GetForwardGrid(static_options, real_projection_t, virtual_projection_t)[:,:2,:,:].permute(0,1,3,2)
-        # grid_t = torch.nn.functional.upsample_bilinear(grid_t, size = (h, w)).permute(0,2,3,1) # [B,H,W,C]
+
+        real_projection_t = torch_GetVirtualProjection(self.static_options, Rt) 
 
         # virtual projection and real projection
-        transform = torch_GetHomographyTransformFromProjections(virtual_projection_t, real_projection_t[:, row_mid])
-        x0, x1, y0, y1 = int(width*ratio), int(width*(1-ratio)), int(height*ratio), int(height*(1-ratio))
+        transform = torch_GetHomographyTransformFromProjections(real_projection_t, virtual_projection_t)
         
-        norm = torch.Tensor([width, height, 1])
-        p00 = torch.Tensor([x0, y0, 1])
-        p01 = torch.Tensor([x0, y1, 1])
-        p10 = torch.Tensor([x1, y0, 1])
-        p11 = torch.Tensor([x1, y1, 1])
-        if USE_CUDA == True:
-            p00 = p00.cuda()
-            p01 = p01.cuda()
-            p10 = p10.cuda()
-            p11 = p11.cuda()
-            norm = norm.cuda()
-        p00 = (torch_ApplyTransform(transform, p00) / norm)[:,:2]
-        p01 = (torch_ApplyTransform(transform, p01) / norm)[:,:2]
-        p10 = (torch_ApplyTransform(transform, p10) / norm)[:,:2]
-        p11 = (torch_ApplyTransform(transform, p11) / norm)[:,:2]
+        p00 = (torch_ApplyTransform(transform, self.p00) / self.norm)[:,:2]
+        p01 = (torch_ApplyTransform(transform, self.p01) / self.norm)[:,:2]
+        p10 = (torch_ApplyTransform(transform, self.p10) / self.norm)[:,:2]
+        p11 = (torch_ApplyTransform(transform, self.p11) / self.norm)[:,:2]
 
         loss = 0
-        for i in range(batch_size):
-            loss += torch.max(torch.stack((self.get_loss(p00[i]), self.get_loss(p01[i]), self.get_loss(p10[i]), self.get_loss(p11[i])),dim = 0))
+        loss = torch.max(torch.stack((self.get_loss(p00), self.get_loss(p01), self.get_loss(p10), self.get_loss(p11)),dim = 0))
         return loss / batch_size
-
-    def get_loss(self, p):
-        if p[0] < 0: d0 = p[0]
-        elif p[0] > 1: d0 = 1 - p[0]
-        else: d0 = p[0] * 0
     
-        if p[1] < 0: d1 = p[1]
-        elif p[1] > 1: d1 = 1 - p[1]
-        else: d1 = p[1] * 0
-        return torch.sum(torch.abs(torch.stack((d0,d1), dim = 0)))
-
-    def compare_0(self, tensor): 
-        return torch.abs(tensor) - tensor
-
-    def compare_1(self, tensor):
-        tensor = 1 - tensor
-        return torch.abs(tensor) - tensor
-
-
+    def get_loss(self, p):
+        d =  p * (p < 0).type(torch.cuda.FloatTensor) + (1 - p) * (p > 1).type(torch.cuda.FloatTensor)
+        return torch.sum(d**2) 

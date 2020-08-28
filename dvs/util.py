@@ -1,6 +1,7 @@
 import os
 import torch
 import cv2
+from itertools import chain
 
 def save_train_info(name, checkpoints_dir, cf, model, count, optimizer = None):
     path = None
@@ -31,9 +32,9 @@ def make_dir(checkpoints_dir ,cf):
 
 def get_optimizer(optimizer, model, init_lr, cf):
     if optimizer == "adam":
-        optimizer = torch.optim.Adam(model.net.parameters(), lr=init_lr, weight_decay=cf["train"]["weight_decay"])
+        optimizer = torch.optim.Adam(chain(model.net.parameters(), model.unet.parameters()), lr=init_lr, weight_decay=cf["train"]["weight_decay"])
     elif optimizer == "sgd":
-        optimizer = torch.optim.SGD(model.net.parameters(), lr=init_lr, momentum=cf["train"]["momentum"])
+        optimizer = torch.optim.SGD(chain(model.net.parameters(), model.unet.parameters()), lr=init_lr, momentum=cf["train"]["momentum"])
     return optimizer
 
 class AverageMeter(object):
@@ -52,6 +53,10 @@ class AverageMeter(object):
             self.avg = self.sum / self.cnt
 
 def norm_flow(flow, h, w):
-    flow[:,:,:,0] /= h
-    flow[:,:,:,1] /= w
+    if flow.shape[2] == 2:
+        flow[:,:,0] /= h
+        flow[:,:,1] /= w
+    else:
+        flow[:,:,:,0] /= h
+        flow[:,:,:,1] /= w
     return flow

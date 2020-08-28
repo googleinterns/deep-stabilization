@@ -78,7 +78,7 @@ class Net(nn.Module):
         self.unit_size = 4
 
         # self._rnn_input_size = (2*cf["data"]["number_real"] + 1) * self.unit_size
-        self._rnn_input_size = (2*cf["data"]["number_real"]+1+cf["data"]["number_virtual"]) * 4
+        self._rnn_input_size = (2*cf["data"]["number_real"]+1+cf["data"]["number_virtual"]) * 4 + 64
 
         #CNN Layers
         cnns = []
@@ -168,8 +168,8 @@ class Net(nn.Module):
         if self.gap is not None:
             x = self.gap(x)
         x = x.view(b,-1)
+        x = torch.cat((x, flo), dim = 1) 
         x = self.rnns(x)
-        # x = torch.cat((x, flo), dim = 1) 
         x = self.fcs(x) # [b, 4]
         x = torch_norm_quat(x)
         return x
@@ -185,7 +185,7 @@ class Model():
         self.loss_follow = Follow_loss()
         self.loss_c2_smooth = C2_Smooth_loss()
         self.loss_optical = Optical_loss()
-        self.loss_undefine = Undefine_loss()
+        self.loss_undefine = Undefine_loss(ratio = 0.08)
         self.loss_angle = Angle_loss()
 
         self.loss_smooth_w = cf["loss"]["smooth"]
@@ -195,32 +195,43 @@ class Model():
         self.loss_undefine_w = cf["loss"]["undefine"]
         self.loss_opt_w = cf["loss"]["opt"]
 
-    def loss(self, out, vt_1, virtual_inputs, real_inputs, flo, flo_back, real_projections_t, real_projections_t_1, real_postion_step, follow = False, undefine = False):
+    def loss(
+        self, out, vt_1, virtual_inputs, real_inputs, flo, flo_back, 
+        real_projections_t, real_projections_t_1, real_postion_anchor, 
+        follow = True, undefine = True, optical = True
+        ):
         unit_size = self.net.unit_size
         mid = real_inputs.size()[1]//(2*unit_size) 
 
-        real_postion = real_inputs[:,unit_size*(mid):unit_size*(mid)+4] 
+        Rt = real_inputs[:,unit_size*(mid):unit_size*(mid)+4] 
         v_pos = torch_QuaternionProduct(out, virtual_inputs[:, -4:])
-        r_pos = torch_QuaternionProduct(v_pos, real_postion_step)
+        r_pos = torch_QuaternionProduct(v_pos, real_postion_anchor)
 
-        loss = 0
+        loss = torch.zeros(6).cuda()
+        if self.loss_follow_w > 0 and follow:
+            for i in range(-2,3):
+                loss[0] += self.loss_follow_w * self.loss_follow(v_pos, real_inputs[:,unit_size*(i+mid):unit_size*(i+mid)+4], None)
+        if self.loss_angle_w > 0 and follow:
+            threshold = 6 / 180 * 3.1415926
+            loss_angle, theta = self.loss_angle(v_pos, Rt, threshold = threshold)
+            loss[1] = self.loss_angle_w * loss_angle
         if self.loss_smooth_w > 0:
             # loss_smooth = self.loss_smooth(out, virtual_inputs[:, -4:])
             loss_smooth = self.loss_smooth(out)
-            loss += self.loss_smooth_w * loss_smooth
-        if self.loss_angle_w > 0:
-            threshold = 8 / 180 * 3.1415926
-            loss_angle, theta = self.loss_angle(v_pos, real_postion, threshold = threshold)
-            loss += self.loss_angle_w * loss_angle
-        if self.loss_follow_w > 0 and follow:
-            for i in range(-2,3):
-                loss += self.loss_follow_w * self.loss_follow(v_pos, real_inputs[:,unit_size*(i+mid):unit_size*(i+mid)+4], None)
-        if self.loss_c2_smooth_w > 0:
-            loss += self.loss_c2_smooth_w * self.loss_c2_smooth(out, virtual_inputs[:, -4:], virtual_inputs[:, -8:-4])
+            loss[2] = self.loss_smooth_w * loss_smooth
+        if self.loss_c2_smooth_w > 0: 
+            loss[3] = self.loss_c2_smooth_w * self.loss_c2_smooth(out, virtual_inputs[:, -4:], virtual_inputs[:, -8:-4])
         if self.loss_undefine_w > 0 and undefine:
-            loss += self.loss_undefine_w * self.loss_undefine(r_pos, real_projections_t)
-        if self.loss_opt_w > 0:
-            loss += self.loss_opt_w * self.loss_optical(out, vt_1, flo, flo_back, real_projections_t, real_projections_t_1) 
+            loss_undefine_w = self.loss_undefine_w
+            Vt_undefine = v_pos #TODO: step size
+            for i in range(0, 10, 2):
+                Rt_undefine = real_inputs[:,unit_size*(mid+i):unit_size*(mid+i)+4]
+                loss[4] +=  loss_undefine_w * self.loss_undefine(Vt_undefine, Rt_undefine)
+                loss_undefine_w *= 0.64
+                Vt_undefine = torch_QuaternionProduct(out, Vt_undefine)
+                Vt_undefine = torch_QuaternionProduct(out, Vt_undefine)
+        if self.loss_opt_w > 0 and optical:
+            loss[5] = self.loss_opt_w * self.loss_optical(r_pos, vt_1, flo, flo_back, real_projections_t, real_projections_t_1) 
         return loss
         # return theta / 3.14 * 180
 
@@ -233,14 +244,23 @@ class Model():
                 elif cf["train"]["init"] == "xavier_normal":
                     nn.init.xavier_normal_(m.weight.data)
 
+        for m in self.unet.modules():
+            if isinstance(m, nn.Conv1d) or isinstance(m, nn.Conv2d) or isinstance(m, nn.Conv3d) or  isinstance(m, nn.Linear):
+                if cf["train"]["init"] == "xavier_uniform":
+                    nn.init.xavier_uniform_(m.weight.data)
+                elif cf["train"]["init"] == "xavier_normal":
+                    nn.init.xavier_normal_(m.weight.data)
+
     def save_checkpoint(self, epoch = 0, optimizer=None):
         package = {
                 'cnn': self.net.cnn_param,
                 'fc': self.net.fc_param,
-                'state_dict': self.net.state_dict()
+                'state_dict': self.net.state_dict(),
                 }
         if optimizer is not None:
             package['optim_dict'] = optimizer.state_dict()
+        if self.unet is not None:
+            package['unet'] = self.unet.state_dict()
         package["epoch"] = epoch
         return package
 
@@ -252,17 +272,14 @@ class UNet(nn.Module):
         self.n_classes = n_classes
         self.bilinear = bilinear
 
-        self.inc = DoubleConv(n_channels, 4)
-        self.down1 = Down(4, 8)
-        self.down2 = Down(8, 16)
-        self.down3 = Down(16, 32)
+        self.inc = DoubleConv(n_channels, 8)
+        self.down1 = Down(8, 16)
+        self.down2 = Down(16, 32)
+        self.down3 = Down(32, 64)
         # factor = 2 if bilinear else 1
-        self.down4 = Down(32, 64)
-        self.down5 = Down(64, 128)
-        self.down6 = Down(128, 256)
-        self.down7 = Down(256, 512)
-        self._fc_input_size = 512 * 2 *3
-        self.fc = LayerFC(self._fc_input_size, 256, bias = True)
+        self.down4 = Down(64, 128)
+        self._fc_input_size = 128 * 1 * 1
+        self.fc = LayerFC(self._fc_input_size, 64, bias = True)
         # self.up1 = Up(1024, 512 // factor, bilinear)
         # self.up2 = Up(512, 256 // factor, bilinear)
         # self.up3 = Up(256, 128 // factor, bilinear)
@@ -280,11 +297,7 @@ class UNet(nn.Module):
         x3 = self.down2(x2)
         x4 = self.down3(x3)
         x5 = self.down4(x4)
-        x6 = self.down5(x5)
-        x7 = self.down6(x6)
-        x8 = self.down7(x7)
-        # print(x8.shape)
-        x = torch.reshape(x8, (b, -1))
+        x = torch.reshape(x5, (b, -1))
         # x = x8.view(b, 512, -1)
         # x = x.view(b,-1)
         x = self.fc(x)
@@ -307,11 +320,11 @@ class DoubleConv(nn.Module):
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(mid_channels),
+            # nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1),
-            nn.BatchNorm2d(out_channels),
-            nn.ReLU(inplace=True)
+            # nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1),
+            # nn.BatchNorm2d(out_channels),
+            # nn.ReLU(inplace=True)
         )
 
     def forward(self, x):
@@ -324,7 +337,7 @@ class Down(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2),
+            nn.MaxPool2d(4),
             DoubleConv(in_channels, out_channels)
         )
 

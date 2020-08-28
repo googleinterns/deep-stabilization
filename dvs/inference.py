@@ -22,16 +22,22 @@ from gyro import (
     GetGyroAtTimeStamp, 
     torch_ConvertQuaternionToAxisAngle, 
     torch_ConvertAxisAngleToQuaternion,
-    torch_QuaternionProduct
+    torch_QuaternionProduct,
+    torch_norm_quat,
+    torch_QuaternionReciprocal,
+    QuaternionProduct,
+    QuaternionReciprocal,
+    ConvertAxisAngleToQuaternion_no_angle
     )
 from warp import warp_video
+from gyro import LoadStabResult
 
-def run(model, loader, cf, USE_CUDA=True):
+def run(model, loader, cf, USE_CUDA=True, EIS_gyro = None):
     number_virtual, number_real = cf['data']["number_virtual"], cf['data']["number_real"]
-    sample_freq = cf['data']["sample_freq"]
     avg_loss = AverageMeter()
 
     model.net.eval()
+    model.unet.eval()
     for i, data in enumerate(loader, 0):
         # get the inputs; data is a list of [inputs, labels]
         real_inputs, times, flo, flo_back, real_projections, real_postion, ois, real_queue_idx = data
@@ -47,89 +53,133 @@ def run(model, loader, cf, USE_CUDA=True):
         times = times.numpy()
         real_queue_idx = real_queue_idx.numpy()
         virtual_queue = [None] * batch_size
+        prev_out = None
         losses = [0]
+        loss = 0
         model.net.init_hidden(batch_size)
+        quat_zero = torch.zeros((1,4)).cuda()
+        quat_zero[:,3] = 1
         for j in range(step):
-            # if j > 25:
+            # if j > 75:
             #     break
             if (j+1) % 10 == 0:
                 print("Step: "+str(j+1)+"/"+str(step))
             virtual_inputs, vt_1 = loader.dataset.get_virtual_data(
-                virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, real_postion[:,j], sample_freq) 
+                virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, real_postion[:,j]) 
             real_inputs_step = real_inputs[:,j,:]
             inputs = torch.cat((real_inputs_step,virtual_inputs), dim = 1) 
+
             # inputs = Variable(real_inputs_step)
             if USE_CUDA:
                 real_inputs_step = real_inputs_step.cuda()
                 virtual_inputs = virtual_inputs.cuda()
                 inputs = inputs.cuda()
-                # flo_step = flo[:,j].cuda()
-                # flo_back_step = flo_back[:,j].cuda()
-                flo_step = None
-                flo_back_step = None
+                flo_step = flo[:,j].cuda()
+                flo_back_step = flo_back[:,j].cuda()
+                # flo_step = None
+                # flo_back_step = None
                 vt_1 = vt_1.cuda()
                 real_projections_t = real_projections[:,j+1].cuda()
                 real_projections_t_1 = real_projections[:,j].cuda()
-                real_postion_step = real_postion[:,j].cuda()
+                real_postion_anchor = real_postion[:,j].cuda()
                 ois_step = ois[:,j].cuda()
 
-            # b, h, w, _ = flo_step.size()
-            # flo_step = norm_flow(flo_step, h, w)
-            # flo_back_step = norm_flow(flo_back_step, h, w)
+            b, h, w, _ = flo_step.size()
+            flo_step = norm_flow(flo_step, h, w)
+            flo_back_step = norm_flow(flo_back_step, h, w)
 
             # print(inputs)
             with torch.no_grad():
-                # flo_out = model.unet(flo_step, flo_back_step)
-                flo_out = None
-                # out = model.net(inputs, flo_out, ois_step)
-                # print("==")
-                # print(out )
-                # print(real_inputs_step[:,40:44])
-                # print((real_postion_step))
+                flo_out = model.unet(flo_step, flo_back_step)
+                # flo_out = None
                 if j < 1:
                     for i in range(10):
                         out = model.net(inputs, flo_out, ois_step)
                 else:
                     out = model.net(inputs, flo_out, ois_step)
+            if prev_out is None:
+                prev_out = quat_zero
+                prev_out_2 = quat_zero
+            else:
+                out = torch_norm_quat(0.75 * prev_out_2 + 0.20 * prev_out+ 0.05 * out)
+                prev_out_2 = prev_out
+                prev_out = out
                 # print(inputs)
             # out[:,:3] *= 0
             # out[:,3] /= out[:,3]
+            # out = torch_norm_quat(out)
             # real = real_inputs_step[:,40:44]
-
-            # print("======")
-            # print(virtual_inputs)
-            # print(out)
-            
-            loss = model.loss(out, vt_1, virtual_inputs, real_inputs_step, flo_step, flo_back_step, real_projections_t, real_projections_t_1, real_postion_step, undefine = True)
-            avg_loss.update(loss.item(), batch_size) 
-            
+            # out = real
             virtual_position = virtual_inputs[:, -4:]
-            # if j % 50 > 100:
-            out = torch_QuaternionProduct(out, virtual_position)
-            out = torch_QuaternionProduct(out, real_postion_step) # [0.001, 0, 0, 1], [0, 0, 0, 1]
+            pos = torch_QuaternionProduct(virtual_position, real_postion_anchor)
+
+            if EIS_gyro is not None:
+                quat_t = torch.Tensor(EIS_gyro[j+1]).cuda()
+                out = torch.unsqueeze(quat_t,dim = 0)
+                out = torch_QuaternionProduct(out, torch_QuaternionReciprocal(pos))
+
+            if (j > step - 3 or j < 2):
+                follow = True
+            else:
+                follow = False
+            
+            # loss_step = model.loss(out, vt_1, virtual_inputs, real_inputs_step, \
+            #     flo_step, flo_back_step, real_projections_t, real_projections_t_1, real_postion_anchor, \
+            #     follow = follow, optical = True, undefine = True)
+            # print(loss_step)
+            # loss += loss_step
+            # avg_loss.update(loss.item(), batch_size) 
+        
+
+            # Q3 = torch_norm_quat(torch_QuaternionProduct(out, torch_QuaternionReciprocal(inputs[:,40:44])))
+            # theta = torch.acos(Q3[:,3]) * 2
+            # print(theta/3.1415926*180)
+
+            out = torch_QuaternionProduct(out, pos)
+
             if USE_CUDA:
                 out = out.cpu().detach().numpy() 
-                real = real_inputs_step[:,40:44].cpu().detach().numpy()
-                # print(j)
-                # print(inputs.cpu().detach().numpy())
-                # print(out)
-                # print(real)
-                losses.append(loss.cpu().detach().numpy())
-                # print(losses[-1])
-            # print(out)
 
             virtual_queue = loader.dataset.update_virtual_queue(batch_size, virtual_queue, out, times[:,j+1])
-
+    
+    # print(virtual_queue)
+    print(loss)
     return avg_loss.avg, np.squeeze(virtual_queue, axis=0), losses
 
 
-def inference(cf, model, data_path, USE_CUDA):
+def inference(cf, data_path, USE_CUDA):
+    checkpoints_dir = cf['data']['checkpoints_dir']
+    checkpoints_dir = make_dir(checkpoints_dir, cf)
+    files = os.listdir(data_path)
+    for f in files:
+        if f[-3:] == "mp4" and "no_ois" not in f:
+            video_name = f[:-4]
+    # EIS_path = "/mnt/disks/dataset/EIS2020_new/results/"+video_name+"_stab_mesh.txt"
+    # EIS_gyro = LoadStabResult(EIS_path)["virtual pose"] #virtual pose
+    EIS_gyro = None
+
+    # Define the model
+    model = Model(cf) 
+    load_model = cf["model"]["load_model"]
+
+    print("------Load Pretrined Model--------")
+    if load_model is not None:
+        checkpoint = torch.load(load_model)
+    else:
+        checkpoint = torch.load(os.path.join(checkpoints_dir, cf['data']['exp']+'_last.checkpoint'))
+    model.net.load_state_dict(checkpoint['state_dict'])
+    model.unet.load_state_dict(checkpoint['unet'])
+                
+    if USE_CUDA:
+        model.net.cuda()
+        model.unet.cuda()
+
     print("-----------Load Dataset----------")
     test_loader = get_inference_data_loader(cf, data_path)
     data = test_loader.dataset.data[0]
 
     start_time = time.time()
-    loss, virtual_queue, losses = run(model, test_loader, cf, USE_CUDA=USE_CUDA)
+    loss, virtual_queue, losses = run(model, test_loader, cf, USE_CUDA=USE_CUDA, EIS_gyro = EIS_gyro)
 
     virtual_data = np.zeros((1,5))
     # virtual_data[:,1:] = GetGyroAtTimeStamp(data.gyro, data.frame[0,0])
@@ -144,63 +194,63 @@ def inference(cf, model, data_path, USE_CUDA):
     time_used = (time.time() - start_time) / 60
 
     print("TestLoss: %.4f | Time_used: %.4f minutes" % (loss, time_used))
-    
-    video_name = data_path.split("/")[-1]
+
     virtual_path = os.path.join("./test", cf['data']['exp'], video_name+'.txt')
     np.savetxt(virtual_path, virtual_queue, delimiter=' ')
     # virtual_queue = np.loadtxt(virtual_path)
 
-    print("------Start Visual Result--------")
-    rotations_virtual, lens_offsets_virtual = get_rotations(data.frame[:data.length], virtual_queue, np.zeros(data.ois.shape), data.length)
-    rotations_real, lens_offsets_real = get_rotations(data.frame[:data.length], data.gyro, data.ois, data.length)
-    
-    path = os.path.join("./test", cf['data']['exp'], video_name+'.jpg')
-    visual_rotation(rotations_real, rotations_virtual, lens_offsets_real, lens_offsets_virtual, path)
-
     # data.length = 300
     print("------Start Warping Video--------")
     grid = get_grid(test_loader.dataset.static_options, \
-        data.frame[:data.length], data.gyro, data.ois, virtual_queue[:data.length,1:])
+        data.frame[:data.length], data.gyro, np.zeros(data.ois.shape), virtual_queue[:data.length,1:], no_shutter = True)
 
-    video_path = os.path.join(data_path, video_name+".mp4")
-    save_path = os.path.join("./test", cf['data']['exp'], video_name+'_stab.mp4')
-    warp_video(grid, video_path, save_path, losses = losses[:data.length])
-    return
+    return data, virtual_queue, video_name, grid
+
+def visual_result(cf, data, video_name, virtual_queue, virtual_queue2 = None, compare_exp = None):
+    print("------Start Visual Result--------")
+    rotations_virtual, lens_offsets_virtual = get_rotations(data.frame[:data.length], virtual_queue, np.zeros(data.ois.shape), data.length)
+    rotations_real, lens_offsets_real = get_rotations(data.frame[:data.length], data.gyro, data.ois, data.length)
+    if virtual_queue2 is not None:
+        rotations_virtual2, lens_offsets_virtual2 = get_rotations(data.frame[:data.length], virtual_queue2, np.zeros(data.ois.shape), data.length)
+        path = os.path.join("./test", cf['data']['exp'], video_name+'_'+compare_exp+'.jpg')
+    else:
+        rotations_virtual2, lens_offsets_virtual2 = None, None
+        path = os.path.join("./test", cf['data']['exp'], video_name+'.jpg')
+    
+    visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_offsets_virtual, rotations_virtual2, lens_offsets_virtual2, path)
+
 
 def main(args = None):
     config_file = args.config
     dir_path = args.dir_path
     cf = yaml.load(open(config_file, 'r'))
-    
-    USE_CUDA = cf['data']["use_cuda"]
 
-    checkpoints_dir = cf['data']['checkpoints_dir']
-    checkpoints_dir = make_dir(checkpoints_dir, cf)
+    USE_CUDA = cf['data']["use_cuda"]
 
     log_file = open(os.path.join(cf["data"]["log"], cf['data']['exp']+'_test.log'), 'w+')
     printer = Printer(sys.stdout, log_file).open()
 
-    # Define the model
-    model = Model(cf) 
-
-    print("------Load Pretrined Model-------")
-    checkpoint = torch.load(os.path.join(checkpoints_dir, cf['data']['exp']+'_last.checkpoint'))
-    model.net.load_state_dict(checkpoint['state_dict'])
-                
-    if USE_CUDA:
-        model.net.cuda()
-        model.unet.cuda()
-
     data_name = sorted(os.listdir(dir_path))
     for i in range(len(data_name)):
         print("Running Inference: " + str(i+1) + "/" + str(len(data_name)))
-        inference(cf, model, os.path.join(dir_path, data_name[i]), USE_CUDA)
+        # compare_exp = "opt_base3_continue_75_20_5"
+        data_path = os.path.join(dir_path, data_name[i])
+        data, virtual_queue, video_name, grid= inference(cf, data_path, USE_CUDA)
+        # compare_path = os.path.join("./test", compare_exp, video_name+'.txt')
+        # virtual_queue2 = np.loadtxt(compare_path, delimiter=' ')
+        virtual_queue2 = None
+        visual_result(cf, data, video_name, virtual_queue, virtual_queue2 = virtual_queue2, compare_exp = None)
+
+        video_path = os.path.join(data_path, video_name+"_no_ois.mp4")
+        save_path = os.path.join("./test", cf['data']['exp'], video_name+'_stab.mp4')
+        # warp_video(grid, video_path, save_path, losses = losses[:data.length], frame_number = True)
+        warp_video(grid, video_path, save_path, frame_number = False)
     return 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Training model")
-    parser.add_argument("--config", default="./conf/sample.yaml", help="Config file.")
-    parser.add_argument("--dir_path", default="/mnt/disks/dataset/Google/test/")
+    parser.add_argument("--config", default="./conf/opt_base3_continue.yaml", help="Config file.")
+    parser.add_argument("--dir_path", default="./video")
     # parser.add_argument("--dir_path", default="/home/zhmeishi_google_com/dvs/data/testdata/videos_with_zero_virtual_motion/inputs_no_rotation")
     args = parser.parse_args()
     main(args = args)

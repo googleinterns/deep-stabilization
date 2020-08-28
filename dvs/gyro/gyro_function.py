@@ -5,7 +5,7 @@ import torch
 import torchgeometry as tgm
 from torch.autograd import Variable
 
-def get_static(height = 1080, width = 1920):
+def get_static(height = 1080, width = 1920, ratio = 0.1):
     static_options = {}
     static_options["active_array_width"] = 4032
     static_options["active_array_height"] = 3024
@@ -17,24 +17,7 @@ def get_static(height = 1080, width = 1920):
     static_options["width"] = width  # frame width.
     static_options["height"] = height # frame height
     # static_options["fov"] = 1.27 # sensor_width/sensor_focal_length
-    static_options["cropping_ratio"] = 0.1 # normalized cropping ratio at each side. 
-    # static_options["cropping_ratio"] = 0 # normalized cropping ratio at each side. 
-    return static_options
-
-def get_static(height = 1080, width = 1920):
-    static_options = {}
-    static_options["active_array_width"] = 4032
-    static_options["active_array_height"] = 3024
-    static_options["crop_window_width"] = 4032
-    static_options["crop_window_height"] = 2272
-    static_options["num_grid_rows"] = 12
-    static_options["num_grid_cols"] = 12
-    static_options["dim_homography"] = 9
-    static_options["width"] = width  # frame width.
-    static_options["height"] = height # frame height
-    # static_options["fov"] = 1.27 # sensor_width/sensor_focal_length
-    static_options["cropping_ratio"] = 0.1 # normalized cropping ratio at each side. 
-    # static_options["cropping_ratio"] = 0 # normalized cropping ratio at each side. 
+    static_options["cropping_ratio"] = ratio # normalized cropping ratio at each side. 
     return static_options
 
 # Quaternion: [x, y, z, w]
@@ -58,11 +41,11 @@ def torch_norm_quat(quat, USE_CUDA = True):
     for i in range(batch_size):
         norm_quat = torch.norm(quat[i])   
         if norm_quat > 1e-6:        
-            quat_out[i] = quat[i] / norm_quat   
+            quat_out[i] = quat[i] / norm_quat   # TODO: Need to check
             #     [0 norm_quat norm_quat - 1e-6]
         else:
-            quat_out[i] = quat[i] * 0
-            quat_out[i, 3] = 1
+            quat_out[i,:3] = quat[i,:3] * 0
+            quat_out[i,3] = quat[i,3] / quat[i,3]
 
     # Method 2:
     # quat = quat / (torch.unsqueeze(torch.norm(quat, dim = 1), 1) + 1e-6) # check norm
@@ -359,12 +342,16 @@ def GetMetadata(frame_data, frame_index, result_poses = {} ):
 
     return metadata
 
-def GetProjections(static_options, metadata, quats_data, ois_data):
+def GetProjections(static_options, metadata, quats_data, ois_data,  no_shutter = False):
     num_rows = static_options["num_grid_rows"]
     real_projections = []
     for i in range(num_rows):
-        timestmap_ns = metadata["timestamp_ns"] + metadata["rs_time_ns"] * i / (num_rows-1)
-        timestamp_ois_ns = metadata["timestamp_ois_ns"] + metadata["rs_time_ns"] * i / (num_rows-1)
+        if no_shutter:
+            timestmap_ns = metadata["timestamp_ns"] + metadata["rs_time_ns"] * 0.5
+            timestamp_ois_ns = metadata["timestamp_ois_ns"] + metadata["rs_time_ns"] * 0.5
+        else:
+            timestmap_ns = metadata["timestamp_ns"] + metadata["rs_time_ns"] * i / (num_rows-1)
+            timestamp_ois_ns = metadata["timestamp_ois_ns"] + metadata["rs_time_ns"] * i / (num_rows-1)
         real_projections.append(GetRealProjection(
             static_options, quats_data, ois_data, metadata["fov"], timestmap_ns, timestamp_ois_ns))
     return real_projections
@@ -714,13 +701,20 @@ if __name__ == "__main__":
     # print(b.shape)
     # print(np.sum(np.abs(a-b)))
     # print(np.sum(np.abs(a)+np.abs(b)))
-    quat = [-0.1,-0.2,0.2,1]
+    # threshold = 8 / 180 * 3.1415926
+    # print(threshold)
+    
+    quat_zero = [0,0,0,1]
+    quat = [0.08, 0.08, 0.08,1]
     quat = quat / LA.norm(quat)
-    print(quat)
+
+    dq = norm_quat(QuaternionProduct(quat, QuaternionReciprocal(quat_zero)))
+    theta = np.arccos(dq[3]) * 2
+    print(theta/3.1415926*180)
     # axis = np.array([0.2, 0.3, 0.5])
     # angle = LA.nrom(axis)
     # quat = ConvertAxisAngleToQuaternion_bk(axis, angle)
-    axis, angle = ConvertQuaternionToAxisAngle(quat)
-    print(axis, angle)
-    quat = ConvertAxisAngleToQuaternion(axis, angle)
-    print(quat)
+    # axis, angle = ConvertQuaternionToAxisAngle(quat)
+    # print(axis, angle)
+    # quat = ConvertAxisAngleToQuaternion(axis, angle)
+    # print(quat)

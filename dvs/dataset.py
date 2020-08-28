@@ -14,7 +14,8 @@ from gyro import (
     QuaternionReciprocal,
     train_ConvertQuaternionToAxisAngle, 
     ConvertAxisAngleToQuaternion_no_angle,
-    FindOISAtTimeStamp
+    FindOISAtTimeStamp,
+    norm_quat
     )
 import random
 import numpy as np
@@ -37,6 +38,10 @@ def get_dataset(cf):
     train_transform, test_transform = _data_transforms()
     train_path = os.path.join(cf["data"]["data_dir"], "train")
     test_path = os.path.join(cf["data"]["data_dir"], "test")
+    if not os.path.exists(train_path):
+        train_path = cf["data"]["data_dir"]
+    if not os.path.exists(test_path):
+        test_path = cf["data"]["data_dir"]
 
     train_data = Dataset_Gyro(
         train_path, sample_freq = cf["data"]["sample_freq"]*1000000, number_real = cf["data"]["number_real"], 
@@ -133,7 +138,7 @@ class Dataset_Gyro(Dataset):
                 dvs_data.gyro = preprocess_gyro(dvs_data.gyro)
                 # gyro_time = dvs_data.gyro[:,0] 
                 print("gyro:", dvs_data.gyro.shape, end="    ")
-            elif "ois" in f:
+            elif "ois" in f and "txt" in f:
                 dvs_data.ois = LoadOISData(file_path)
                 print("ois:", dvs_data.ois.shape, end="    ")
                 # ois_time = dvs_data.ois[:,2] 
@@ -145,7 +150,10 @@ class Dataset_Gyro(Dataset):
                 dvs_data.flo_back_path, _ = LoadFlow(file_path)
             
         print()
-        dvs_data.length = min(dvs_data.frame.shape[0] - 1, len(dvs_data.flo_path))
+        if dvs_data.flo_path is not None:
+            dvs_data.length = min(dvs_data.frame.shape[0] - 1, len(dvs_data.flo_path))
+        else:
+            dvs_data.length = dvs_data.frame.shape[0] - 1 
         return dvs_data
 
     def generate_quaternions(self, dvs_data):
@@ -158,14 +166,14 @@ class Dataset_Gyro(Dataset):
         sample_ois = np.zeros((self.number_train, 2))
 
         sample_time = np.zeros((self.number_train+1))
-        sample_time[0] = dvs_data.frame[first_id - 1, 0]
+        sample_time[0] = get_timestamp(dvs_data.frame, first_id - 1)
 
         real_postion = np.zeros((self.number_train, 4))
 
         time_start = sample_time[0]
 
         for i in range(self.number_train):
-            sample_time[i+1] = dvs_data.frame[first_id + i, 0]
+            sample_time[i+1] = get_timestamp(dvs_data.frame, first_id + i)
             real_postion[i] = GetGyroAtTimeStamp(dvs_data.gyro, sample_time[i+1] - self.sample_freq)
             sample_ois[i] = self.get_ois_at_timestamp(dvs_data.ois, sample_time[i+1])
             for j in range(-self.number_real, self.number_real+1):
@@ -206,36 +214,35 @@ class Dataset_Gyro(Dataset):
             frame_id = i + first_id
             metadata = GetMetadata(self.data[idx].frame, frame_id - 1)
             # real_projections[i] = np.array(GetProjections(self.static_options, metadata, self.data[idx].gyro, self.data[idx].ois))
-            real_projections[i] = np.array(GetProjections(self.static_options, metadata, self.data[idx].gyro, np.zeros(self.data[idx].ois.shape)))
+            real_projections[i] = np.array(GetProjections(self.static_options, metadata, self.data[idx].gyro, np.zeros(self.data[idx].ois.shape), no_shutter = True))
         return real_projections
 
     def __getitem__(self, idx):
-        inputs, times, first_id, real_postion, ois = self.generate_quaternions(self.data[idx])
-        if self.no_flo:
-            return inputs, times 
+        inputs, times, first_id, real_postion, ois = self.generate_quaternions(self.data[idx]) 
         real_projections = self.load_real_projections(idx, first_id)
-        # flo, flo_back = self.load_flo(idx, first_id)
-        flo, flo_back = 0, 0
+        if self.no_flo:
+            flo, flo_back = 0, 0
+        else:
+            flo, flo_back = self.load_flo(idx, first_id)
         return inputs, times, flo, flo_back, real_projections, real_postion, ois, idx
 
     def __len__(self):
         return self.length
 
-    def get_virtual_data(self, virtual_queue, real_queue_idx, pre_times, cur_times, time_start, batch_size, number_virtual, quat_t_1, sample_freq):
+    def get_virtual_data(self, virtual_queue, real_queue_idx, pre_times, cur_times, time_start, batch_size, number_virtual, quat_t_1):
         # virtual_queue: [batch_size, num, 5 (timestamp, quats)]
         # eular angle, 
         # deta R angular velocity [Q't-1, Q't-2] 
         # output virtual angular velocity, x, x*dtime => detaQt
-        sample_freq *= 1000000
         virtual_data = np.zeros((batch_size, number_virtual, 4))
         vt_1 = np.zeros((batch_size, 4))
         quat_t_1 = quat_t_1.numpy()
         for i in range(batch_size):
             sample_time = cur_times[i]
             for j in range(number_virtual):
-                time_stamp = sample_time - sample_freq * (number_virtual - j) 
-                virtual_data[i, j] = get_virtual_at_timestamp(virtual_queue[i], self.data[real_queue_idx[i]].gyro, time_stamp, time_start[i], quat_t_1[i], index = j)
-            vt_1[i] = get_virtual_at_timestamp(virtual_queue[i], self.data[real_queue_idx[i]].gyro, pre_times[i], time_start[i], quat_t_1[i], index = j) # Need Modify
+                time_stamp = sample_time - self.sample_freq * (number_virtual - j) 
+                virtual_data[i, j] = get_virtual_at_timestamp(virtual_queue[i], self.data[real_queue_idx[i]].gyro, time_stamp, time_start[i], quat_t_1[i])
+            vt_1[i] = get_virtual_at_timestamp(virtual_queue[i], self.data[real_queue_idx[i]].gyro, pre_times[i], time_start[i], None)
         virtual_data = np.reshape(virtual_data, (batch_size, number_virtual * 4))
         return torch.tensor(virtual_data, dtype=torch.float), torch.tensor(vt_1, dtype=torch.float)
 
@@ -254,6 +261,19 @@ class Dataset_Gyro(Dataset):
             virtual_queue = np.concatenate((virtual_queue, virtual_data), axis = 1)
         return virtual_queue
 
+    def random_init_virtual_queue(self, batch_size, real_postion, times):
+        virtual_queue = np.zeros((batch_size, 2, 5))
+        virtual_queue[:, 1, 0] = times - self.sample_freq
+        virtual_queue[:, 0, 0] = times - 2 * self.sample_freq
+        for i in range(batch_size):
+            quat = np.random.uniform(low=-0.05, high= 0.05, size=4) # transfer to angle
+            quat[3] = 1
+            quat = quat / LA.norm(quat)
+            quat = norm_quat(QuaternionProduct(quat, real_postion[i]))
+            virtual_queue[i, 1, 1:] = quat
+            virtual_queue[i, 0, 1:] = quat
+        return virtual_queue
+
     def get_data_at_timestamp(self, gyro_data, ois_data, time_stamp, quat_t_1):
         quat_t = GetGyroAtTimeStamp(gyro_data, time_stamp)
         quat_dif = QuaternionProduct(quat_t, QuaternionReciprocal(quat_t_1))  
@@ -268,9 +288,12 @@ class Dataset_Gyro(Dataset):
         ois_t = FindOISAtTimeStamp(ois_data, time_stamp)
         ois_t = np.array(ois_t) / self.ois_ratio
         return ois_t
-    
 
-    
+def get_timestamp(frame_data, idx):
+    sample_time = frame_data[idx, 0]
+    metadata = GetMetadata(frame_data, idx)
+    timestmap_ns = metadata["timestamp_ns"] + metadata["rs_time_ns"] * 0.5
+    return timestmap_ns
 
 def preprocess_gyro(gyro, extend = 200):
     fake_gyro = np.zeros((extend, 5))
@@ -294,21 +317,21 @@ def resize_flow(flow, ratio):
     f1 = np.expand_dims(ndimage.zoom(flow[:,:,1], ratio), axis = 2)
     return np.concatenate((f0,f1),axis=2)
 
-def get_virtual_at_timestamp(virtual_queue, real_queue, time_stamp, time_start, quat_t_1 = None, sample_freq = None, index = None):
+def get_virtual_at_timestamp(virtual_queue, real_queue, time_stamp, time_start, quat_t_1 = None, sample_freq = None):
     # if time_stamp < time_start:
     #     return GetGyroAtTimeStamp(real_queue, time_start)
     if virtual_queue is None:
         quat_t = GetGyroAtTimeStamp(real_queue, time_stamp)
     else:
         quat_t = train_GetGyroAtTimeStamp(virtual_queue, time_stamp)
-        # if len(virtual_queue) > index:
-        #     quat_t = virtual_queue[-index-1, 1:]
-        # else:
         if quat_t is None:
             quat_t = GetGyroAtTimeStamp(real_queue, time_stamp)
-    quat_dif = QuaternionProduct(quat_t, QuaternionReciprocal(quat_t_1))  
-    return quat_dif
-    # return quat_t
+            
+    if quat_t_1 is None:
+        return quat_t
+    else:
+        quat_dif = QuaternionProduct(quat_t, QuaternionReciprocal(quat_t_1))  
+        return quat_dif
     # return train_ConvertQuaternionToAxisAngle(quat_t) 
 
 if __name__ == "__main__":

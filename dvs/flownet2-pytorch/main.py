@@ -35,6 +35,9 @@ def inference(args, epoch, data_path, data_loader, model, offset=0):
         flow_vis_folder = "{}/flo_vis".format(data_path)
         if not os.path.exists(flow_vis_folder):
             os.makedirs(flow_vis_folder)
+        flow_back_vis_folder = "{}/flo_back_vis".format(data_path)
+        if not os.path.exists(flow_back_vis_folder):
+            os.makedirs(flow_back_vis_folder)
     
     args.inference_n_batches = np.inf if args.inference_n_batches < 0 else args.inference_n_batches
 
@@ -69,6 +72,9 @@ def inference(args, epoch, data_path, data_loader, model, offset=0):
             if args.save_flow or args.render_validation:
                 _pflow = output[0].data.cpu().numpy().transpose(1, 2, 0)
                 flow_utils.writeFlow( flo_back_path,  _pflow)
+                if args.inference_visualize:
+                    flow_utils.visulize_flow_file(
+                        join(flow_back_folder, '%06d.flo' % (batch_idx)), flow_back_vis_folder)
                 
         progress.update(1)
 

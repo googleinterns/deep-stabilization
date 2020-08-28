@@ -16,19 +16,21 @@ def load_gyro_mesh(input_name):
     data["warping grid"] = np.reshape(data["warping grid"],(-1,int(w),int(h),4))
     return data
 
-def get_grid(static_options, frame_data, quats_data, ois_data, virtual_data):
+def get_grid(static_options, frame_data, quats_data, ois_data, virtual_data, no_shutter = False):
     grid = []
     result_poses = {}
     result_poses['virtual pose'] = virtual_data
     for i in range(len(virtual_data)):
         metadata = GetMetadata(frame_data, i)
-        real_projections = GetProjections(static_options, metadata, quats_data, ois_data)
+        real_projections = GetProjections(static_options, metadata, quats_data, ois_data, no_shutter = no_shutter)
+        # print(real_projections[0])
         virtual_projection = GetVirtualProjection(static_options, result_poses, metadata, i) 
+        # print(virtual_projection)
         grid.append(GetForwardGrid(static_options, real_projections, virtual_projection))
     grid = np.array(grid)
     zoom_ratio = 1 / (1 - 2 * static_options["cropping_ratio"])
     curr_grid = CenterZoom(grid, zoom_ratio)
-    curr_grid = np.transpose(curr_grid,(0,3,2,1)) 
+    curr_grid = np.transpose(curr_grid,(0,3,2,1))
     return curr_grid
 
 def get_rotations(frame_data, quats_data, ois_data, num_frames):
@@ -47,7 +49,7 @@ def get_rotations(frame_data, quats_data, ois_data, num_frames):
 
     return rotations, lens_offsets
 
-def visual_rotation(rotations_real, rotations_virtual, lens_offsets_real, lens_offsets_virtual, path):
+def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_offsets_virtual, rotations_virtual2, lens_offsets_virtual2, path):
     # figure('units','normalized','outerposition',[0 0 1 1])
     plt.clf()
     plt.figure(figsize=(8,8))
@@ -55,29 +57,39 @@ def visual_rotation(rotations_real, rotations_virtual, lens_offsets_real, lens_o
     plt.subplot(5,1,1)
     plt.plot(rotations_real[:,0], "g")
     plt.plot(rotations_virtual[:,0], "b")
+    if rotations_virtual2 is not None:
+        plt.plot(rotations_virtual2[:,0], "r")
     plt.ylim(-0.02, 0.02)
     plt.xlabel('gyro x')
 
     plt.subplot(5,1,2)
     plt.plot(rotations_real[:,1], "g")
     plt.plot(rotations_virtual[:,1], "b")
+    if rotations_virtual2 is not None:
+        plt.plot(rotations_virtual2[:,1], "r")
     plt.ylim(-0.02, 0.02)
     plt.xlabel('gyro y')
 
     plt.subplot(5,1,3)
     plt.plot(rotations_real[:,2], "g")
     plt.plot(rotations_virtual[:,2], "b")
+    if rotations_virtual2 is not None:
+        plt.plot(rotations_virtual2[:,2], "r")
     plt.ylim(-0.02, 0.02)
     plt.xlabel('gyro z')
     
     plt.subplot(5,1,4)
     plt.plot(lens_offsets_real[:,0], "g")
     plt.plot(lens_offsets_virtual[:,0], "b")
+    if rotations_virtual2 is not None:
+        plt.plot(lens_offsets_virtual2[:,0], "r")
     plt.xlabel('ois x')
 
     plt.subplot(5,1,5)
     plt.plot(lens_offsets_real[:,1], "g")
     plt.plot(lens_offsets_virtual[:,1], "b")
+    if rotations_virtual2 is not None:
+        plt.plot(lens_offsets_virtual2[:,1], "r")
     plt.xlabel('ois y')
 
     plt.savefig(path)

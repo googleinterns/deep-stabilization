@@ -1,0 +1,6 @@
+{
+  "rs_time_us" : 15980,
+  "cam_time_delay_us" : 0,
+  "video_timestamp_offset" : 0,
+  "fov" : 1.27
+}
