@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
@@ -140,7 +141,7 @@ if __name__ == '__main__':
         args.inference_dataset_class = tools.module_to_dict(datasets)[args.inference_dataset]
 
         args.cuda = not args.no_cuda and torch.cuda.is_available()
-        args.current_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).rstrip()
+        # args.current_hash = subprocess.check_output(["git", "rev-parse", "HEAD"]).rstrip()
         args.log_file = join(args.save, 'args.txt')
 
         # dict to collect activation gradients (for training debug purpose)
@@ -150,7 +151,7 @@ if __name__ == '__main__':
         args.inference_dir = "{}/inference".format(args.save)
 
     print('Source Code')
-    print(('  Current Git Hash: {}\n'.format(args.current_hash)))
+    # print(('  Current Git Hash: {}\n'.format(args.current_hash)))
 
     # Dynamically load the dataset class with parameters passed in via "--argument_[param]=[value]" arguments
     with tools.TimerBlock("Initializing Datasets") as block:

@@ -21,8 +21,8 @@ def Rasterization(image, grid, get_mesh_only = False):
     xratio = xlength / width
     yratio = ylength / height
 
-    wapper_triangle = torch.stack((wapper_upper_triangle,wapper_lower_triangle),axis = 1).to(device) # grid * upper/lower * point * xy
-    origin_triangle = torch.stack((origin_upper_triangle,origin_lower_triangle),axis = 1).to(device) # grid * upper/lower * point * xy
+    wapper_triangle = torch.stack((wapper_upper_triangle,wapper_lower_triangle),dim = 1).to(device) # grid * upper/lower * point * xy
+    origin_triangle = torch.stack((origin_upper_triangle,origin_lower_triangle),dim = 1).to(device) # grid * upper/lower * point * xy
 
     tran_triangle = torch.zeros(wapper_triangle.size()).to(device)
 
@@ -35,7 +35,7 @@ def Rasterization(image, grid, get_mesh_only = False):
     origin_triangle = torch.unsqueeze(origin_triangle, 1)
 
     grid_sample = origin_triangle * mask # consuming
-    grid_sample = torch.sum(torch.sum(grid_sample, axis = 3), axis = 2).view(-1,ylength,xlength,2) # consuming
+    grid_sample = torch.sum(torch.sum(grid_sample, dim = 3), dim = 2).view(-1,ylength,xlength,2) # consuming
 
     gxmin = min(0, int(torch.min(xmin)))
     gxmax = int(torch.max(xmin) + xlength)
@@ -60,7 +60,7 @@ def Rasterization(image, grid, get_mesh_only = False):
     shift = torch.tensor([0.5/height,0.5/width])[None, None, :].to(device)
     grid_merge = (grid_merge + 1*shift) * 2 - 1
 
-    image[:,:2,:2] = 0
+    image[:3,:2,:2] = 0
 
     image = torch.unsqueeze(image, 0).to(device)
     grid_merge = torch.unsqueeze(grid_merge, 0)
@@ -75,21 +75,21 @@ def grid_to_triangle(grid):
     num = (grid_shape[0] - 1) * (grid_shape[1] - 1)
 
     upper_triangle = grid[:-1, :-1, :, None]
-    upper_triangle = torch.cat(( upper_triangle, grid[1:, :-1, :, None]), axis = 3)
-    upper_triangle = torch.cat(( upper_triangle, grid[:-1, 1:, :, None]), axis = 3)
+    upper_triangle = torch.cat(( upper_triangle, grid[1:, :-1, :, None]), dim = 3)
+    upper_triangle = torch.cat(( upper_triangle, grid[:-1, 1:, :, None]), dim = 3)
     upper_triangle = upper_triangle.view(num, 2, 3)
     upper_triangle = torch.transpose(upper_triangle, 1, 2) # grid * point * xy
  
     lower_triangle = grid[:-1, 1:, :, None]
-    lower_triangle = torch.cat(( lower_triangle, grid[1:, :-1, :, None]), axis = 3)
-    lower_triangle = torch.cat(( lower_triangle, grid[1:, 1:, :, None]), axis = 3)
+    lower_triangle = torch.cat(( lower_triangle, grid[1:, :-1, :, None]), dim = 3)
+    lower_triangle = torch.cat(( lower_triangle, grid[1:, 1:, :, None]), dim = 3)
     lower_triangle = lower_triangle.view(num, 2, 3)
     lower_triangle = torch.transpose(lower_triangle, 1, 2)
     
     return upper_triangle,  lower_triangle # grid * point * xy
 
 def grid_size(upper_triangle, lower_triangle, height, width):
-    wapper_grid = torch.cat((upper_triangle, lower_triangle),axis =1)
+    wapper_grid = torch.cat((upper_triangle, lower_triangle),dim =1)
     xmax = torch.floor(torch.max(wapper_grid[:,:,0]*width, 1)[0]) + 1
     ymax = torch.floor(torch.max(wapper_grid[:,:,1]*height, 1)[0]) + 1
     xmin = torch.floor(torch.min(wapper_grid[:,:,0]*width, 1)[0])
@@ -134,7 +134,7 @@ def triangle2mask(d, height, width): # d: [N x T x 3 x 2]
     # [N x P]
 
     mask = (w0 > 0) & (w1 > 0) & (w2 > 0)
-    mask = torch.unsqueeze(mask, 3)
+    mask = torch.unsqueeze(mask, 3).type(torch.cuda.FloatTensor)
 
     w = torch.stack((w0,w1,w2),dim = 3) * mask
 

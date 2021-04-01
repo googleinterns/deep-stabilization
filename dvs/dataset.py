@@ -12,8 +12,6 @@ from gyro import (
     train_GetGyroAtTimeStamp,
     QuaternionProduct,
     QuaternionReciprocal,
-    train_ConvertQuaternionToAxisAngle, 
-    ConvertAxisAngleToQuaternion_no_angle,
     FindOISAtTimeStamp,
     norm_quat
     )
@@ -25,15 +23,15 @@ from flownet2 import flow_utils
 from scipy import ndimage, misc
 from numpy import linalg as LA
 
-def get_data_loader(cf):
+def get_data_loader(cf, no_flo = False):
     size = cf["data"]["batch_size"]
     num_workers = cf["data"]["num_workers"]
-    train_data, test_data = get_dataset(cf)
+    train_data, test_data = get_dataset(cf, no_flo)
     trainloader = torch.utils.data.DataLoader(train_data, batch_size=size,shuffle=True, pin_memory=True, num_workers=num_workers)
     testloader = torch.utils.data.DataLoader(test_data, batch_size=size,shuffle=False, pin_memory=True, num_workers=num_workers)
     return trainloader,testloader
 
-def get_dataset(cf):
+def get_dataset(cf, no_flo = False):
     resize_ratio = cf["data"]["resize_ratio"]
     train_transform, test_transform = _data_transforms()
     train_path = os.path.join(cf["data"]["data_dir"], "train")
@@ -45,10 +43,10 @@ def get_dataset(cf):
 
     train_data = Dataset_Gyro(
         train_path, sample_freq = cf["data"]["sample_freq"]*1000000, number_real = cf["data"]["number_real"], 
-        time_train = cf["data"]["time_train"]*1000000, transform = train_transform, resize_ratio = resize_ratio)
+        time_train = cf["data"]["time_train"]*1000000, transform = train_transform, resize_ratio = resize_ratio, no_flo = no_flo)
     test_data = Dataset_Gyro(
         test_path, sample_freq = cf["data"]["sample_freq"]*1000000, number_real = cf["data"]["number_real"], 
-        time_train = cf["data"]["time_train"]*1000000, transform = test_transform, resize_ratio = resize_ratio)
+        time_train = cf["data"]["time_train"]*1000000, transform = test_transform, resize_ratio = resize_ratio, no_flo = no_flo)
     return train_data, test_data
 
 def get_inference_data_loader(cf, data_path, no_flo = False):
@@ -109,13 +107,11 @@ class Dataset_Gyro(Dataset):
         if inference_only:
             self.length = 1
             self.data = [self.process_one_video(path)]
-            self.number_train = self.data[0].length
+            self.number_train = self.data[0].length  
             return
 
         self.time_train = time_train
         self.number_train = time_train//self.sample_freq
-
-        # self.number_train = 100
         
         self.data_name = sorted(os.listdir(path))
         self.length = len(self.data_name)
@@ -129,19 +125,18 @@ class Dataset_Gyro(Dataset):
         print(path)
         for f in files:
             file_path = os.path.join(path,f)
+            if "gimbal" in file_path.lower():
+                continue
             if "frame" in f and "txt" in f:
                 dvs_data.frame = LoadFrameData(file_path)
                 print("frame:", dvs_data.frame.shape, end="    ")
             elif "gyro" in f:
                 dvs_data.gyro = LoadGyroData(file_path)
-                # print("gyro:", dvs_data.gyro.shape, end="    ")
-                dvs_data.gyro = preprocess_gyro(dvs_data.gyro)
-                # gyro_time = dvs_data.gyro[:,0] 
+                dvs_data.gyro = preprocess_gyro(dvs_data.gyro) 
                 print("gyro:", dvs_data.gyro.shape, end="    ")
             elif "ois" in f and "txt" in f:
                 dvs_data.ois = LoadOISData(file_path)
                 print("ois:", dvs_data.ois.shape, end="    ")
-                # ois_time = dvs_data.ois[:,2] 
             elif f == "flo":
                 dvs_data.flo_path, dvs_data.flo_shape = LoadFlow(file_path)
                 print("flo_path:", len(dvs_data.flo_path), end="    ")
@@ -158,17 +153,14 @@ class Dataset_Gyro(Dataset):
 
     def generate_quaternions(self, dvs_data):
         first_id = random.randint(0, dvs_data.length - self.number_train) + 1 # skip the first frame
-        # ratio = random.randint(0, 100)
-        # if ratio < 30:
-        # first_id = 1 
 
-        sample_data = np.zeros((self.number_train, 2 * self.number_real + 1, self.unit_size))
-        sample_ois = np.zeros((self.number_train, 2))
+        sample_data = np.zeros((self.number_train, 2 * self.number_real + 1, self.unit_size), dtype=np.float32)
+        sample_ois = np.zeros((self.number_train, 2), dtype=np.float32)
 
-        sample_time = np.zeros((self.number_train+1))
+        sample_time = np.zeros((self.number_train+1), dtype=np.float32)
         sample_time[0] = get_timestamp(dvs_data.frame, first_id - 1)
 
-        real_postion = np.zeros((self.number_train, 4))
+        real_postion = np.zeros((self.number_train, 4), dtype=np.float32)
 
         time_start = sample_time[0]
 
@@ -179,9 +171,6 @@ class Dataset_Gyro(Dataset):
             for j in range(-self.number_real, self.number_real+1):
                 index = j + self.number_real
                 time_stamp = sample_time[i+1] + self.sample_freq * j 
-                # if time_start >= time_stamp:
-                #     sample_data[i, index] = get_data_at_timestamp(dvs_data.gyro, time_start, self.sample_freq)
-                # else:
                 sample_data[i, index] = self.get_data_at_timestamp(dvs_data.gyro, dvs_data.ois, time_stamp, real_postion[i])
                 
         sample_data = np.reshape(sample_data, (self.number_train, (2*self.number_real+1) * self.unit_size))
@@ -189,7 +178,6 @@ class Dataset_Gyro(Dataset):
 
     def load_flo(self, idx, first_id):
         shape = self.data[idx].flo_shape
-        # h, w = int(self.resize_ratio * shape[0]), int(self.resize_ratio * shape[1])
         h, w = shape[0], shape[1]
         flo = np.zeros((self.number_train, h, w, 2))
         flo_back = np.zeros((self.number_train, h, w, 2))
@@ -197,13 +185,9 @@ class Dataset_Gyro(Dataset):
         for i in range(self.number_train):
             frame_id = i + first_id
             f = flow_utils.readFlow(self.data[idx].flo_path[frame_id-1]).astype(np.float32) 
-            # f = resize_flow(f, self.resize_ratio) # Have done on the dataset
-            # f = norm_flow(f, shape)
             flo[i] = f
 
             f_b = flow_utils.readFlow(self.data[idx].flo_back_path[frame_id-1]).astype(np.float32) 
-            # f_b = resize_flow(f_b, self.resize_ratio)
-            # f_b = norm_flow(f_b, shape)
             flo_back[i] = f_b
 
         return flo, flo_back
@@ -213,7 +197,6 @@ class Dataset_Gyro(Dataset):
         for i in range(self.number_train + 1):
             frame_id = i + first_id
             metadata = GetMetadata(self.data[idx].frame, frame_id - 1)
-            # real_projections[i] = np.array(GetProjections(self.static_options, metadata, self.data[idx].gyro, self.data[idx].ois))
             real_projections[i] = np.array(GetProjections(self.static_options, metadata, self.data[idx].gyro, np.zeros(self.data[idx].ois.shape), no_shutter = True))
         return real_projections
 
@@ -234,8 +217,8 @@ class Dataset_Gyro(Dataset):
         # eular angle, 
         # deta R angular velocity [Q't-1, Q't-2] 
         # output virtual angular velocity, x, x*dtime => detaQt
-        virtual_data = np.zeros((batch_size, number_virtual, 4))
-        vt_1 = np.zeros((batch_size, 4))
+        virtual_data = np.zeros((batch_size, number_virtual, 4), dtype=np.float32)
+        vt_1 = np.zeros((batch_size, 4), dtype=np.float32)
         quat_t_1 = quat_t_1.numpy()
         for i in range(batch_size):
             sample_time = cur_times[i]
@@ -250,9 +233,6 @@ class Dataset_Gyro(Dataset):
         virtual_data = np.zeros((batch_size, 5))
         virtual_data[:,0] = times
         virtual_data[:, 1:] = out
-        # for i in range(batch_size):
-            # virtual_data[i,1:] = ConvertAxisAngleToQuaternion_no_angle(out[i,:3])
-            # virtual_data[i,1:] = out[i] 
         virtual_data = np.expand_dims(virtual_data, axis = 1)
 
         if None in virtual_queue:
@@ -262,14 +242,16 @@ class Dataset_Gyro(Dataset):
         return virtual_queue
 
     def random_init_virtual_queue(self, batch_size, real_postion, times):
-        virtual_queue = np.zeros((batch_size, 2, 5))
-        virtual_queue[:, 1, 0] = times - self.sample_freq
-        virtual_queue[:, 0, 0] = times - 2 * self.sample_freq
+        virtual_queue = np.zeros((batch_size, 3, 5))
+        virtual_queue[:, 2, 0] = times - 0.1 * self.sample_freq
+        virtual_queue[:, 1, 0] = times - 1.1 * self.sample_freq
+        virtual_queue[:, 0, 0] = times - 2.1 * self.sample_freq
         for i in range(batch_size):
-            quat = np.random.uniform(low=-0.05, high= 0.05, size=4) # transfer to angle
+            quat = np.random.uniform(low=-0.06, high= 0.06, size=4) # transfer to angle # 0.05
             quat[3] = 1
             quat = quat / LA.norm(quat)
-            quat = norm_quat(QuaternionProduct(quat, real_postion[i]))
+            quat = norm_quat(QuaternionProduct(real_postion[i], quat))
+            virtual_queue[i, 2, 1:] = quat
             virtual_queue[i, 1, 1:] = quat
             virtual_queue[i, 0, 1:] = quat
         return virtual_queue
@@ -278,11 +260,6 @@ class Dataset_Gyro(Dataset):
         quat_t = GetGyroAtTimeStamp(gyro_data, time_stamp)
         quat_dif = QuaternionProduct(quat_t, QuaternionReciprocal(quat_t_1))  
         return quat_dif
-        # quat_t_1 = GetGyroAtTimeStamp(gyro_data, time_stamp - sample_freq)
-        # return train_ConvertQuaternionToAxisAngle(quat_t) 
-        # ois_t = self.get_ois_at_timestamp(ois_data, time_stamp)
-        # data_t = np.concatenate((quat_t, ois_t), axis = 0)
-        # return quat_t
 
     def get_ois_at_timestamp(self, ois_data, time_stamp):
         ois_t = FindOISAtTimeStamp(ois_data, time_stamp)
@@ -300,7 +277,8 @@ def preprocess_gyro(gyro, extend = 200):
     time_start = gyro[0,0]
     for i in range(extend):
         fake_gyro[-i-1, 0] = time_start - (gyro[i+1, 0] - time_start)
-        fake_gyro[-i-1, 1:] = gyro[i+1, 1:]
+        fake_gyro[-i-1, 4] = gyro[i+1, 4]
+        fake_gyro[-i-1, 1:4] = -gyro[i+1, 1:4]
 
     new_gyro = np.concatenate((fake_gyro, gyro), axis = 0)
     return new_gyro
@@ -312,14 +290,7 @@ def LoadFlow(path):
         file_path.append(os.path.join(path, n))
     return file_path, flow_utils.readFlow(file_path[0]).shape
 
-def resize_flow(flow, ratio):
-    f0 = np.expand_dims(ndimage.zoom(flow[:,:,0], ratio), axis = 2)
-    f1 = np.expand_dims(ndimage.zoom(flow[:,:,1], ratio), axis = 2)
-    return np.concatenate((f0,f1),axis=2)
-
 def get_virtual_at_timestamp(virtual_queue, real_queue, time_stamp, time_start, quat_t_1 = None, sample_freq = None):
-    # if time_stamp < time_start:
-    #     return GetGyroAtTimeStamp(real_queue, time_start)
     if virtual_queue is None:
         quat_t = GetGyroAtTimeStamp(real_queue, time_stamp)
     else:
@@ -332,9 +303,3 @@ def get_virtual_at_timestamp(virtual_queue, real_queue, time_stamp, time_start, 
     else:
         quat_dif = QuaternionProduct(quat_t, QuaternionReciprocal(quat_t_1))  
         return quat_dif
-    # return train_ConvertQuaternionToAxisAngle(quat_t) 
-
-if __name__ == "__main__":
-    path = "/mnt/disks/dataset/Google/test/s2_outdoor_runing_forward_VID_20200304_144434/flo"
-    # Dataset_Gyro(path)
-    LoadFlow(path)

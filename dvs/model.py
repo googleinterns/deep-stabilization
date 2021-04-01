@@ -7,7 +7,7 @@ import numpy as np
 import util
 import yaml
 import os
-from loss import C2_Smooth_loss, C1_Smooth_loss, Optical_loss, Undefine_loss, Angle_loss, Follow_loss
+from loss import C2_Smooth_loss, C1_Smooth_loss, Optical_loss, Undefine_loss, Angle_loss, Follow_loss, Stay_loss
 from gyro import torch_norm_quat, torch_QuaternionProduct
 import torch.nn.functional as F
 
@@ -27,7 +27,6 @@ class LayerLSTM(nn.Module):
         self.hx, self.cx = self.LSTM(x, (self.hx, self.cx))
         return self.hx
         
-
 
 class LayerCNN(nn.Module):
     def __init__(self, in_channel, out_channel, kernel_size, stride, padding, pooling_size=None, 
@@ -76,9 +75,12 @@ class Net(nn.Module):
         self.rnn_param = cf["model"]["rnn"]
         self.fc_param = cf["model"]["fc"]
         self.unit_size = 4
+        self.no_flo = False
 
-        # self._rnn_input_size = (2*cf["data"]["number_real"] + 1) * self.unit_size
-        self._rnn_input_size = (2*cf["data"]["number_real"]+1+cf["data"]["number_virtual"]) * 4 + 64
+        if self.no_flo is False:
+            self._rnn_input_size = (2*cf["data"]["number_real"]+1+cf["data"]["number_virtual"]) * 4 + 64
+        else:
+            self._rnn_input_size = (2*cf["data"]["number_real"]+1+cf["data"]["number_virtual"]) * self.unit_size
 
         #CNN Layers
         cnns = []
@@ -125,9 +127,7 @@ class Net(nn.Module):
             rnns.append(('%d'%layer, rnn))
         self.rnns = nn.Sequential(OrderedDict(rnns))
 
-        # self._fc_input_size = rnn_layer_param[rnn_layers-1][0]
         self._fc_input_size = rnn_layer_param[rnn_layers-1][0] #* 2 # ois
-        # self._fc_input_size = self._rnn_input_size
         
         #FC Layers
         fcs = []
@@ -168,7 +168,8 @@ class Net(nn.Module):
         if self.gap is not None:
             x = self.gap(x)
         x = x.view(b,-1)
-        x = torch.cat((x, flo), dim = 1) 
+        if self.no_flo is False:
+            x = torch.cat((x, flo), dim = 1) 
         x = self.rnns(x)
         x = self.fcs(x) # [b, 4]
         x = torch_norm_quat(x)
@@ -187,6 +188,7 @@ class Model():
         self.loss_optical = Optical_loss()
         self.loss_undefine = Undefine_loss(ratio = 0.08)
         self.loss_angle = Angle_loss()
+        self.loss_stay = Stay_loss()
 
         self.loss_smooth_w = cf["loss"]["smooth"]
         self.loss_angle_w = cf["loss"]["angle"]
@@ -194,11 +196,14 @@ class Model():
         self.loss_c2_smooth_w = cf["loss"]["c2_smooth"]
         self.loss_undefine_w = cf["loss"]["undefine"]
         self.loss_opt_w = cf["loss"]["opt"]
+        self.loss_stay_w = cf["loss"]["stay"]
+
+        self.gaussian_weight = np.array([0.072254, 0.071257, 0.068349, 0.063764, 0.057856, 0.051058, 0.043824, 0.036585, 0.029705, 0.023457, 0.01801])
 
     def loss(
         self, out, vt_1, virtual_inputs, real_inputs, flo, flo_back, 
         real_projections_t, real_projections_t_1, real_postion_anchor, 
-        follow = True, undefine = True, optical = True
+        follow = True, undefine = True, optical = True, stay = False
         ):
         unit_size = self.net.unit_size
         mid = real_inputs.size()[1]//(2*unit_size) 
@@ -207,7 +212,7 @@ class Model():
         v_pos = torch_QuaternionProduct(out, virtual_inputs[:, -4:])
         r_pos = torch_QuaternionProduct(v_pos, real_postion_anchor)
 
-        loss = torch.zeros(6).cuda()
+        loss = torch.zeros(7).cuda()
         if self.loss_follow_w > 0 and follow:
             for i in range(-2,3):
                 loss[0] += self.loss_follow_w * self.loss_follow(v_pos, real_inputs[:,unit_size*(i+mid):unit_size*(i+mid)+4], None)
@@ -216,24 +221,23 @@ class Model():
             loss_angle, theta = self.loss_angle(v_pos, Rt, threshold = threshold)
             loss[1] = self.loss_angle_w * loss_angle
         if self.loss_smooth_w > 0:
-            # loss_smooth = self.loss_smooth(out, virtual_inputs[:, -4:])
             loss_smooth = self.loss_smooth(out)
             loss[2] = self.loss_smooth_w * loss_smooth
         if self.loss_c2_smooth_w > 0: 
             loss[3] = self.loss_c2_smooth_w * self.loss_c2_smooth(out, virtual_inputs[:, -4:], virtual_inputs[:, -8:-4])
         if self.loss_undefine_w > 0 and undefine:
-            loss_undefine_w = self.loss_undefine_w
-            Vt_undefine = v_pos #TODO: step size
+            Vt_undefine = v_pos.clone() 
             for i in range(0, 10, 2):
                 Rt_undefine = real_inputs[:,unit_size*(mid+i):unit_size*(mid+i)+4]
+                loss_undefine_w = self.loss_undefine_w * self.gaussian_weight[i]
                 loss[4] +=  loss_undefine_w * self.loss_undefine(Vt_undefine, Rt_undefine)
-                loss_undefine_w *= 0.64
                 Vt_undefine = torch_QuaternionProduct(out, Vt_undefine)
                 Vt_undefine = torch_QuaternionProduct(out, Vt_undefine)
         if self.loss_opt_w > 0 and optical:
             loss[5] = self.loss_opt_w * self.loss_optical(r_pos, vt_1, flo, flo_back, real_projections_t, real_projections_t_1) 
+        if self.loss_stay_w > 0 and stay:
+            loss[6] = self.loss_stay_w * self.loss_stay(out) 
         return loss
-        # return theta / 3.14 * 180
 
 
     def init_weights(self, cf):
@@ -280,11 +284,6 @@ class UNet(nn.Module):
         self.down4 = Down(64, 128)
         self._fc_input_size = 128 * 1 * 1
         self.fc = LayerFC(self._fc_input_size, 64, bias = True)
-        # self.up1 = Up(1024, 512 // factor, bilinear)
-        # self.up2 = Up(512, 256 // factor, bilinear)
-        # self.up3 = Up(256, 128 // factor, bilinear)
-        # self.up4 = Up(128, 64, bilinear)
-        # self.outc = OutConv(32, n_classes)
 
     def forward(self, x, x_back = None):
         if x_back is not None:
@@ -298,17 +297,8 @@ class UNet(nn.Module):
         x4 = self.down3(x3)
         x5 = self.down4(x4)
         x = torch.reshape(x5, (b, -1))
-        # x = x8.view(b, 512, -1)
-        # x = x.view(b,-1)
         x = self.fc(x)
         return x
-
-        # x = self.up1(x5, x4)
-        # x = self.up2(x, x3)
-        # x = self.up3(x, x2)
-        # x = self.up4(x, x1)
-        # logits = self.outc(x5)
-        # return logits
 
 
 class DoubleConv(nn.Module):
@@ -320,11 +310,7 @@ class DoubleConv(nn.Module):
             mid_channels = out_channels
         self.double_conv = nn.Sequential(
             nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1),
-            # nn.BatchNorm2d(mid_channels),
             nn.ReLU(inplace=True),
-            # nn.Conv2d(mid_channels, out_channels, kernel_size=3, padding=1),
-            # nn.BatchNorm2d(out_channels),
-            # nn.ReLU(inplace=True)
         )
 
     def forward(self, x):

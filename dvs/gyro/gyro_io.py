@@ -23,9 +23,7 @@ def get_grid(static_options, frame_data, quats_data, ois_data, virtual_data, no_
     for i in range(len(virtual_data)):
         metadata = GetMetadata(frame_data, i)
         real_projections = GetProjections(static_options, metadata, quats_data, ois_data, no_shutter = no_shutter)
-        # print(real_projections[0])
         virtual_projection = GetVirtualProjection(static_options, result_poses, metadata, i) 
-        # print(virtual_projection)
         grid.append(GetForwardGrid(static_options, real_projections, virtual_projection))
     grid = np.array(grid)
     zoom_ratio = 1 / (1 - 2 * static_options["cropping_ratio"])
@@ -56,7 +54,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
     
     plt.subplot(5,1,1)
     plt.plot(rotations_real[:,0], "g")
-    plt.plot(rotations_virtual[:,0], "b")
+    if rotations_virtual is not None:
+        plt.plot(rotations_virtual[:,0], "b")
     if rotations_virtual2 is not None:
         plt.plot(rotations_virtual2[:,0], "r")
     plt.ylim(-0.02, 0.02)
@@ -64,7 +63,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
 
     plt.subplot(5,1,2)
     plt.plot(rotations_real[:,1], "g")
-    plt.plot(rotations_virtual[:,1], "b")
+    if rotations_virtual is not None:
+        plt.plot(rotations_virtual[:,1], "b")
     if rotations_virtual2 is not None:
         plt.plot(rotations_virtual2[:,1], "r")
     plt.ylim(-0.02, 0.02)
@@ -72,7 +72,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
 
     plt.subplot(5,1,3)
     plt.plot(rotations_real[:,2], "g")
-    plt.plot(rotations_virtual[:,2], "b")
+    if rotations_virtual is not None:
+        plt.plot(rotations_virtual[:,2], "b")
     if rotations_virtual2 is not None:
         plt.plot(rotations_virtual2[:,2], "r")
     plt.ylim(-0.02, 0.02)
@@ -80,19 +81,21 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
     
     plt.subplot(5,1,4)
     plt.plot(lens_offsets_real[:,0], "g")
-    plt.plot(lens_offsets_virtual[:,0], "b")
+    if lens_offsets_virtual is not None:
+        plt.plot(lens_offsets_virtual[:,0], "b")
     if rotations_virtual2 is not None:
         plt.plot(lens_offsets_virtual2[:,0], "r")
     plt.xlabel('ois x')
 
     plt.subplot(5,1,5)
     plt.plot(lens_offsets_real[:,1], "g")
-    plt.plot(lens_offsets_virtual[:,1], "b")
+    if lens_offsets_virtual is not None:
+        plt.plot(lens_offsets_virtual[:,1], "b")
     if rotations_virtual2 is not None:
         plt.plot(lens_offsets_virtual2[:,1], "r")
     plt.xlabel('ois y')
-
-    plt.savefig(path)
+    
+    plt.savefig(path[:-4]+".jpg")
     return
 
 def LoadOISData(ois_name):
@@ -156,8 +159,4 @@ def str2num(string):
     nums = [float(_) for _ in nums if _ != ""]
     return nums
     
-
-if __name__ == "__main__":
-    result = '/home/zhmeishi_google_com/dvs/data/testdata/results_updated/s2_outdoor_runing_forward_VID_20200304_144434_stab_mesh.txt'
-    LoadStabResult(result)
     

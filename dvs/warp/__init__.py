@@ -3,5 +3,6 @@ from .warping import (
     )
 from .read_write import (
     save_video,
-    load_video
+    load_video,
+    video2frame_one_seq
     )

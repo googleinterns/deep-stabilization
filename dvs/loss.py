@@ -24,12 +24,7 @@ class C2_Smooth_loss(torch.nn.Module):
         self.MSE = torch.nn.MSELoss()
 
     def forward(self, Qt, Qt_1, Qt_2):
-        # Rt = torch_ConvertAxisAngleToQuaternion(Qt) 
-        # Rt_1 = torch_ConvertAxisAngleToQuaternion(Qt_1)
-        # Rt_2 = torch_ConvertAxisAngleToQuaternion(Qt_2)
-        # detaQt = torch_QuaternionProduct(Qt, torch_QuaternionReciprocal(Qt_1))  
         detaQt_1 = torch_QuaternionProduct(Qt_1, torch_QuaternionReciprocal(Qt_2))
-        # print(Qt[0],Qt_1[0],Qt_2[0],detaQt_1[0])  
         return self.MSE(Qt, detaQt_1)
 
 class C1_Smooth_loss(torch.nn.Module):
@@ -38,10 +33,6 @@ class C1_Smooth_loss(torch.nn.Module):
         self.MSE = torch.nn.MSELoss()
 
     def forward(self, v_r_axis, v_axis_t_1 = None, real_postion = None):
-        # v_r_Q = torch_ConvertAxisAngleToQuaternion(v_r_axis)
-        # v_Q = torch_QuaternionProduct(real_postion, v_r_axis)
-        # v_Q_t_1 = torch_ConvertAxisAngleToQuaternion(v_axis_t_1)
-        # return self.MSE(v_Q, v_Q_t_1)
         quat_zero = torch.zeros(v_r_axis.shape).cuda()
         quat_zero[:,3] = 1
         return self.MSE(v_r_axis, quat_zero)
@@ -56,21 +47,27 @@ class Follow_loss(torch.nn.Module):
             real_quat = torch_QuaternionProduct(real_quat, real_postion)
         return self.MSE(virtual_quat, real_quat)
 
+class Stay_loss(torch.nn.Module):
+    def __init__(self):
+        super(Stay_loss, self).__init__()
+        self.zero = torch.tensor([0.0,0.0,0.0,1.0]).cuda()
+
+    def forward(self, virtual_quat):
+        return torch.mean(torch.abs(virtual_quat - self.zero))
+
+
 class Angle_loss(torch.nn.Module):
     def __init__(self):
         super(Angle_loss, self).__init__()
         self.MSE = torch.nn.MSELoss()
 
     def forward(self, Q1, Q2, threshold = 0.5236, logistic_beta1 = 100):
+        batch_size = Q1.shape[0]
         Q3 = torch_norm_quat(torch_QuaternionProduct(Q2, torch_QuaternionReciprocal(Q1)))
-        theta = torch.acos(Q3[:,3]) * 2
+        theta = torch.zeros(batch_size).cuda()
+        index = (Q3[:,3] < 1).nonzero()
+        theta[index] = torch.acos(Q3[index,3]) * 2
         loss = torch.mean(theta * (1 / (1 + torch.exp(-logistic_beta1 * (theta - threshold)))))
-
-        # batch_size = Q3.size()[0]
-        # loss = Variable(torch.zeros((1), requires_grad=True))
-        # for i in range(batch_size):
-        #     if angle[i] > threshold:
-        #         loss += 1
         return loss, theta
 
 class Optical_loss(torch.nn.Module):
@@ -90,13 +87,6 @@ class Optical_loss(torch.nn.Module):
 
         grid_t_1 = torch_GetForwardGrid(self.static_options, real_projection_t_1, virtual_projection_t_1)[:,:2,:,:].permute(0,1,3,2) 
         grid_t_1 = torch.nn.functional.upsample_bilinear(grid_t_1, size = (h, w)) # [B,C(xy),H,W]
-
-        # grid_f = torch_GetForwardGrid(self.static_options, real_projection_t_1, real_projection_t[:,0,:,:])[:,:2,:,:].permute(0,1,3,2)
-        # grid_f = torch.nn.functional.upsample_bilinear(grid_f, size = (h, w)).permute(0,2,3,1)
-        
-        # grid_b = torch_GetForwardGrid(self.static_options, real_projection_t, real_projection_t_1[:,0,:,:])[:,:2,:,:].permute(0,1,3,2)  
-        # grid_b = torch.nn.functional.upsample_bilinear(grid_b, size = (h, w)).permute(0,2,3,1)
-        # shift = torch.tensor([0.25/h,0.25/w])[None, None, :].cuda()
         
         mesh = self.mesh.repeat(b, 1, 1, 1)
         flo = flo + mesh 
@@ -121,7 +111,12 @@ class Optical_loss(torch.nn.Module):
 
         forward_loss = torch.sum(forward_diff, dim = (1,2,3)) / torch.sum(valid, dim = (1,2,3))
         backward_loss = torch.sum(backward_diff, dim = (1,2,3)) / torch.sum(valid_back, dim = (1,2,3))
-        return torch.sum(forward_loss + backward_loss) / b
+
+        loss = forward_loss + backward_loss
+        loss = torch.min(loss, loss - loss + 1) #[0]
+        loss = torch.sum(loss) / b
+
+        return loss 
 
 
 def get_mesh(height = 270, width = 480, USE_CUDA = True):
@@ -135,9 +130,10 @@ def get_mesh(height = 270, width = 480, USE_CUDA = True):
     return mesh
 
 class Undefine_loss(torch.nn.Module):
-    def __init__(self, ratio = 0.08, USE_CUDA = True):
+    def __init__(self, ratio = 0.08, inner_ratio = 0.04, USE_CUDA = True):
         super(Undefine_loss, self).__init__()
         self.static_options = get_static() 
+        self.inner_ratio = inner_ratio
         width = self.static_options["width"]
         height = self.static_options["height"]
         x0, x1, y0, y1 = \
@@ -154,7 +150,7 @@ class Undefine_loss(torch.nn.Module):
             self.p11 = self.p11.cuda()
             self.norm = self.norm.cuda()
 
-    def forward(self, Vt, Rt):
+    def forward(self, Vt, Rt, ratio = 0.04):
         batch_size = Vt.size()[0]
 
         row_mid = self.static_options["num_grid_rows"] // 2
@@ -170,10 +166,15 @@ class Undefine_loss(torch.nn.Module):
         p10 = (torch_ApplyTransform(transform, self.p10) / self.norm)[:,:2]
         p11 = (torch_ApplyTransform(transform, self.p11) / self.norm)[:,:2]
 
-        loss = 0
-        loss = torch.max(torch.stack((self.get_loss(p00), self.get_loss(p01), self.get_loss(p10), self.get_loss(p11)),dim = 0))
-        return loss / batch_size
+        loss = torch.stack((self.get_loss(p00), self.get_loss(p01), self.get_loss(p10), self.get_loss(p11)),dim = 1)
+        loss,_ = torch.max(loss, dim = 1)
+
+        loss = torch.min(loss, loss - loss + 1) #[0]
+        loss = torch.sum(loss) / batch_size
+
+        return loss
     
     def get_loss(self, p):
-        d =  p * (p < 0).type(torch.cuda.FloatTensor) + (1 - p) * (p > 1).type(torch.cuda.FloatTensor)
-        return torch.sum(d**2) 
+        d =  (p - self.inner_ratio) * (p < self.inner_ratio).type(torch.cuda.FloatTensor) + \
+            (1 - self.inner_ratio - p) * (p > (1 - self.inner_ratio)).type(torch.cuda.FloatTensor)
+        return torch.sum(d**2, dim = 1) 

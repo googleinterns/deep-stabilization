@@ -2,16 +2,11 @@ import os
 import torch
 import cv2
 from itertools import chain
-
-def save_train_info(name, checkpoints_dir, cf, model, count, optimizer = None):
-    path = None
-    if name == "last":
-        path = os.path.join(checkpoints_dir, cf['data']['exp']+'_last.checkpoint')
-    elif name == "best":
-        path = os.path.join(checkpoints_dir, cf['data']['exp']+'_best.checkpoint')
-    else:
-        path = os.path.join(checkpoints_dir, cf['data']['exp']+'_epoch%d.checkpoint'%count)
-    torch.save(model.save_checkpoint(epoch = count, optimizer=optimizer), path)
+from warp import load_video, save_video
+import numpy as np
+import matplotlib.pyplot as plt
+from gyro import get_rotations
+import shutil
 
 def make_dir(checkpoints_dir ,cf):
     inference_path = "./test"
@@ -37,20 +32,15 @@ def get_optimizer(optimizer, model, init_lr, cf):
         optimizer = torch.optim.SGD(chain(model.net.parameters(), model.unet.parameters()), lr=init_lr, momentum=cf["train"]["momentum"])
     return optimizer
 
-class AverageMeter(object):
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.avg = 0
-        self.sum = 0
-        self.cnt = 0
-
-    def update(self, val, n=1):
-        self.sum += val * n
-        self.cnt += n
-        if self.cnt > 0:
-            self.avg = self.sum / self.cnt
+def crop_video(in_path, out_path, crop_ratio):
+    frame_array, fps, size = load_video(in_path)
+    hs = int((1-crop_ratio)*1080) + 1
+    he = int(crop_ratio*1080) - 1
+    ws = int((1-crop_ratio)*1920) + 1
+    we = int(crop_ratio*1920) - 1
+    for i in range(len(frame_array)):
+        frame_array[i] = cv2.resize(frame_array[i][hs:he,ws:we,:], size, interpolation = cv2.INTER_LINEAR)
+    save_video(out_path, frame_array, fps, size= size)
 
 def norm_flow(flow, h, w):
     if flow.shape[2] == 2:

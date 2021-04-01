@@ -17,7 +17,7 @@ def get_static(height = 1080, width = 1920, ratio = 0.1):
     static_options["width"] = width  # frame width.
     static_options["height"] = height # frame height
     # static_options["fov"] = 1.27 # sensor_width/sensor_focal_length
-    static_options["cropping_ratio"] = ratio # normalized cropping ratio at each side. 
+    static_options["cropping_ratio"] = 0.0 #ratio # normalized cropping ratio at each side. 
     return static_options
 
 # Quaternion: [x, y, z, w]
@@ -41,7 +41,7 @@ def torch_norm_quat(quat, USE_CUDA = True):
     for i in range(batch_size):
         norm_quat = torch.norm(quat[i])   
         if norm_quat > 1e-6:        
-            quat_out[i] = quat[i] / norm_quat   # TODO: Need to check
+            quat_out[i] = quat[i] / norm_quat  
             #     [0 norm_quat norm_quat - 1e-6]
         else:
             quat_out[i,:3] = quat[i,:3] * 0
@@ -50,14 +50,6 @@ def torch_norm_quat(quat, USE_CUDA = True):
     # Method 2:
     # quat = quat / (torch.unsqueeze(torch.norm(quat, dim = 1), 1) + 1e-6) # check norm
     return quat_out
-
-def diff(data1):
-    data2 = np.loadtxt("/home/zhmeishi_google_com/dvs/data/testdata/matlab/compare_data.txt")
-    print(np.sum(np.abs(data1 - data2)))
-    print(np.sum(np.abs(data1) + np.abs(data2)))
-    print(np.min(data1))
-    print(np.min(data2))
-
 
 def ConvertAxisAngleToQuaternion(axis, angle):
     if LA.norm(axis) > 1e-6 and angle > 1e-6: 
@@ -99,11 +91,9 @@ def torch_ConvertAxisAngleToQuaternion(axis, USE_CUDA = True):
 def ConvertQuaternionToAxisAngle(quat):
     quat = quat/LA.norm(quat)   
     axis_norm = LA.norm(quat[0:3])
-    # axis = np.array([1.0, 0.0, 0.0])
     axis = np.array([0.0, 0.0, 0.0])
     if axis_norm < 1e-6:
         angle = 0   
-        #     [axis_norm 1e-6]
     else:
         axis_norm_reciprocal = 1/axis_norm   
         axis[0] = quat[0] * axis_norm_reciprocal   
@@ -115,15 +105,12 @@ def ConvertQuaternionToAxisAngle(quat):
 def ConvertQuaternionToAxisAngle_no_angle(quat):
     quat = quat/LA.norm(quat)   
     axis_norm = LA.norm(quat[0:3])
-    # axis = np.array([1.0, 0.0, 0.0])
     axis = np.array([0.0, 0.0, 0.0])  
     if axis_norm > 1e-6:
-        # axis_norm_reciprocal = 2.0 * np.arctan2(axis_norm, quat[0]) / axis_norm
         axis_norm_reciprocal = 1 / axis_norm * 2 *  np.arccos(quat[3])
         axis[0] = quat[0] * axis_norm_reciprocal   
         axis[1] = quat[1] * axis_norm_reciprocal   
         axis[2] = quat[2] * axis_norm_reciprocal   
-        # angle = 2 * np.arccos(quat[3])
     return axis
 
 def torch_ConvertQuaternionToAxisAngle(quat, USE_CUDA = True):
@@ -134,7 +121,6 @@ def torch_ConvertQuaternionToAxisAngle(quat, USE_CUDA = True):
     for i in range(batch_size): 
         axis_norm = torch.norm(quat[i, 0:3])
         if axis_norm > 1e-6:
-            # axis_norm_reciprocal = 2.0 * torch.atan2(axis_norm, quat[i,0]) / axis_norm
             axis_norm_reciprocal = 1/axis_norm  * 2 * torch.acos(quat[i,3])
             axis_angle[i,0] = quat[i,0] * axis_norm_reciprocal   
             axis_angle[i,1] = quat[i,1] * axis_norm_reciprocal   
@@ -628,93 +614,3 @@ def CenterZoom(grid, ratio):
     grid[:, 0:2, :, :]  = (grid[:, 0:2, :, :] - 0.5) * ratio + 0.5
     return grid
 
-
-if __name__ == "__main__":
-    # q = torch.Tensor([[1,2,113,14],[1,2,113,15],[0,0,0,0]]).cuda()
-    # m = torch_ConvertQuaternionToRotationMatrix(q)
-    # q1 = torch_ConvertRotationMatrixToQuaternion(m)
-    # r = torch_QuaternionReciprocal(q)
-    # print(r)
-    # grid2dense(12)
-    v = [[-7.7367e+02,  4.3100e+02, -1.5562e+03],
-         [ 5.7426e+02, -1.1666e+03, -9.4121e+02],
-         [-7.5880e-01, -5.2547e-01, -3.8485e-01]]
-    r = [[[ 1.5590e+03, -1.0463e+01,  9.2322e+02],
-          [ 3.5068e+01,  1.5107e+03,  5.4005e+02],
-          [ 4.9087e-02, -1.9499e-03,  9.9879e-01]],
-
-         [[ 1.5595e+03, -1.0489e+01,  9.2240e+02],
-          [ 3.5385e+01,  1.5107e+03,  5.4005e+02],
-          [ 4.9618e-02, -1.9460e-03,  9.9877e-01]],
-
-         [[ 1.5600e+03, -1.0515e+01,  9.2159e+02],
-          [ 3.5703e+01,  1.5107e+03,  5.4004e+02],
-          [ 5.0148e-02, -1.9421e-03,  9.9874e-01]],
-
-         [[ 1.5605e+03, -1.0539e+01,  9.2077e+02],
-          [ 3.6019e+01,  1.5107e+03,  5.4004e+02],
-          [ 5.0680e-02, -1.9378e-03,  9.9871e-01]],
-
-         [[ 1.5610e+03, -1.0555e+01,  9.1993e+02],
-          [ 3.6334e+01,  1.5107e+03,  5.4006e+02],
-          [ 5.1218e-02, -1.9322e-03,  9.9869e-01]],
-
-         [[ 1.5614e+03, -1.0572e+01,  9.1909e+02],
-          [ 3.6648e+01,  1.5107e+03,  5.4007e+02],
-          [ 5.1755e-02, -1.9266e-03,  9.9866e-01]],
-
-         [[ 1.5619e+03, -1.0588e+01,  9.1825e+02],
-          [ 3.6962e+01,  1.5107e+03,  5.4009e+02],
-          [ 5.2293e-02, -1.9211e-03,  9.9863e-01]],
-
-         [[ 1.5624e+03, -1.0603e+01,  9.1740e+02],
-          [ 3.7278e+01,  1.5108e+03,  5.4008e+02],
-          [ 5.2835e-02, -1.9140e-03,  9.9860e-01]],
-
-         [[ 1.5629e+03, -1.0617e+01,  9.1655e+02],
-          [ 3.7593e+01,  1.5108e+03,  5.4006e+02],
-          [ 5.3377e-02, -1.9068e-03,  9.9857e-01]],
-
-         [[ 1.5634e+03, -1.0632e+01,  9.1571e+02],
-          [ 3.7909e+01,  1.5108e+03,  5.4004e+02],
-          [ 5.3920e-02, -1.8995e-03,  9.9854e-01]],
-
-         [[ 1.5639e+03, -1.0648e+01,  9.1486e+02],
-          [ 3.8223e+01,  1.5108e+03,  5.4002e+02],
-          [ 5.4461e-02, -1.8940e-03,  9.9851e-01]],
-
-         [[ 1.5644e+03, -1.0666e+01,  9.1400e+02],
-          [ 3.8538e+01,  1.5108e+03,  5.4004e+02],
-          [ 5.5000e-02, -1.8903e-03,  9.9848e-01]]]
-
-    # static_options = get_static()
-    # a = GetForwardGrid(static_options, r, v)
-    # print(np.array(r).shape)
-    # print(np.array(v).shape)
-    # r = torch.Tensor(np.expand_dims(r, axis = 0)).cuda().repeat(2,1,1,1)
-    # v = torch.Tensor(np.expand_dims(v, axis = 0)).cuda().repeat(2,1,1)
-    # print(r.shape)
-    # print(v.shape)
-    # b = torch_GetForwardGrid(static_options, r, v)
-    # print(b.permute(0,2,3,1))
-    # b = b.cpu().numpy()[0]
-    # print(b.shape)
-    # print(np.sum(np.abs(a-b)))
-    # print(np.sum(np.abs(a)+np.abs(b)))
-    # threshold = 8 / 180 * 3.1415926
-    # print(threshold)
-    
-    quat_zero = [0,0,0,1]
-    quat = [0.08, 0.08, 0.08,1]
-    quat = quat / LA.norm(quat)
-
-    dq = norm_quat(QuaternionProduct(quat, QuaternionReciprocal(quat_zero)))
-    theta = np.arccos(dq[3]) * 2
-    print(theta/3.1415926*180)
-    # axis = np.array([0.2, 0.3, 0.5])
-    # angle = LA.nrom(axis)
-    # quat = ConvertAxisAngleToQuaternion_bk(axis, angle)
-    # axis, angle = ConvertQuaternionToAxisAngle(quat)
-    # print(axis, angle)
-    # quat = ConvertAxisAngleToQuaternion(axis, angle)
-    # print(quat)

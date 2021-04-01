@@ -1,5 +1,4 @@
 from .gyro_function import (
-    diff,
     GetGyroAtTimeStamp,
     QuaternionProduct,
     QuaternionReciprocal,
@@ -27,7 +26,8 @@ from .gyro_function import (
     ConvertQuaternionToAxisAngle_no_angle,
     torch_GetHomographyTransformFromProjections,
     torch_ApplyTransform,
-    norm_quat
+    norm_quat,
+    SlerpWithDefault
     )
 from .gyro_io import (
     LoadGyroData, 
