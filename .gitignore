@@ -2,6 +2,8 @@
 .torch
 _ext
 *.o
-work
-work/*
 _ext/
+*.png
+*.jpg
+*.tar
+log/*
