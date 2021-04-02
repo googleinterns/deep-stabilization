@@ -15,7 +15,7 @@ from dataset import get_data_loader, get_inference_data_loader
 from model import Model
 import datetime
 import copy
-from util import make_dir, get_optimizer, AverageMeter, norm_flow
+from util import make_dir, get_optimizer, norm_flow
 from gyro import (
     get_grid, 
     get_rotations, 
@@ -91,17 +91,23 @@ def inference(cf, data_path, USE_CUDA):
 
     print("------Start Visual Result--------")
     rotations_real, lens_offsets_real = get_rotations(data.frame[:data.length], data.gyro, data.ois, data.length)
-    fig_path = os.path.join("./test", cf['data']['exp'], video_name+'_real.jpg')
+    fig_path = os.path.join(data_path, video_name+"_real.jpg")
     visual_rotation(rotations_real, lens_offsets_real, None, None, None, None, fig_path)
 
     print("------Start Warping Video--------")
     grid = get_grid(test_loader.dataset.static_options, \
         data.frame[:data.length], data.gyro, data.ois, virtual_queue[:data.length,1:], no_shutter = False) 
 
+    grid_rm_shutter = get_grid(test_loader.dataset.static_options, \
+        data.frame[:data.length], data.gyro, np.zeros(data.ois.shape), virtual_queue[:data.length,1:], no_shutter = False) 
+
     video_path = os.path.join(data_path, video_name+".mp4")
     data_name = data_path.split("/")[-1]
     save_path = os.path.join(data_path, video_name+"_no_ois.mp4")
     warp_video(grid, video_path, save_path, losses = None)
+
+    save_path = os.path.join(data_path, video_name+"_no_shutter.mp4")
+    warp_video(grid_rm_shutter, video_path, save_path, losses = None)
     return
 
 def main(args = None):

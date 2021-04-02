@@ -304,7 +304,7 @@ if __name__ == '__main__':
     if not os.path.exists(metric_path):
         os.makedirs(metric_path)
 
-    in_video = "./video/s_114_outdoor_running_trail_daytime/ControlCam_20200930_104820.mp4"
+    in_video = "./video/s_114_outdoor_running_trail_daytime/ControlCam_20200930_104820_no_shutter.mp4"
     in_folder = os.path.join(metric_path, "in_frame")
     if not os.path.exists(in_folder):
         os.makedirs(in_folder)
@@ -316,7 +316,7 @@ if __name__ == '__main__':
         os.makedirs(out_folder)
         video2frame_one_seq(out_video, out_folder)
     
-    package = os.path.join(metric_path, "iccv_6")
+    package = os.path.join(metric_path, "iccv_6.pt")
     FOV = metrics(in_folder, out_folder, package)
 
     crop_path = out_video[:-4] + "_crop.mp4"
