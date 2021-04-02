@@ -105,32 +105,89 @@ def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
     count = 1
     for index, f in enumerate(frameList, 0):
         if f.endswith('.png'):
-            try:
-                # Load the images in gray scale
-                img1 = cv2.imread(os.path.join(in_src, f), 0)  
-                img1 = cv2.resize(img1, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
+            # Load the images in gray scale
+            img1 = cv2.imread(os.path.join(in_src, f), 0)  
+            img1 = cv2.resize(img1, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
 
-                img1o = cv2.imread(os.path.join(out_src, f), 0)
-                img1o = cv2.resize(img1o, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
-                sift = cv2.xfeatures2d.SURF_create()   
+            img1o = cv2.imread(os.path.join(out_src, f), 0)
+            img1o = cv2.resize(img1o, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
+            sift = cv2.xfeatures2d.SURF_create()   
+            
+            if f in dic["in_sift"]:
+                keyPoints1, descriptors1 = dic["in_sift"][f]
+            else:
+                # Detect the SIFT key points and compute the descriptors for the two images
+                keyPoints1, descriptors1 = sift.detectAndCompute(img1, None)
+                dic["in_sift"][f] = (keyPoints1, descriptors1)
+
+            if f in dic["out_sift"]:
+                keyPoints1o, descriptors1o = dic["out_sift"][f]
+            else:
+                keyPoints1o, descriptors1o = sift.detectAndCompute(img1o, None)
+                dic["out_sift"][f] = (keyPoints1o, descriptors1o)
+
+            # Match the descriptors
+            matches = bf.knnMatch(descriptors1, descriptors1o, k=2)
+
+            # Select the good matches using the ratio test
+            goodMatches = []
+
+            for m, n in matches:
+                if m.distance < ratio * n.distance:
+                    goodMatches.append(m)
+
+            if len(goodMatches) > MIN_MATCH_COUNT:
+                # Get the good key points positions
+                sourcePoints = np.float32([ keyPoints1[m.queryIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
+                destinationPoints = np.float32([ keyPoints1o[m.trainIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
                 
-                if f in dic["in_sift"]:
-                    keyPoints1, descriptors1 = dic["in_sift"][f]
+                M, mask = cv2.findHomography(sourcePoints, destinationPoints, method=cv2.RANSAC, ransacReprojThreshold=thresh)
+                im_dst = cv2.warpPerspective(img1, M, (w_size,h_size))  
+
+                cm = []
+                for i in range(6):
+                    for j in range(6):
+                        hs = int(h_size * (0.2 + 0.1 * i))
+                        he = int(h_size * (0.3 + 0.1 * i))
+                        ws = int(w_size * (0.2 + 0.1 * j))
+                        we = int(w_size * (0.3 + 0.1 * j))
+                        cm.append(np.corrcoef(img1o[hs:he, ws:we].flat, im_dst[hs:he, ws:we].flat))
+                dic["distortion"].append(cm)
+
+                if crop_scale:
+                    sx, sy = get_scale(M)
+                    M_scale = get_rescale_matrix(M, sx, sy)
+                    w_crop, h_crop = crop_metric(M_scale)
                 else:
-                    # Detect the SIFT key points and compute the descriptors for the two images
-                    keyPoints1, descriptors1 = sift.detectAndCompute(img1, None)
-                    dic["in_sift"][f] = (keyPoints1, descriptors1)
+                    w_crop, h_crop = crop_metric(M)
+                dic["w_crop"].append(w_crop)
+                dic["h_crop"].append(h_crop)
 
-                if f in dic["out_sift"]:
-                    keyPoints1o, descriptors1o = dic["out_sift"][f]
+            # Obtain Scale, Translation, Rotation, Distortion value
+            sx = M[0, 0]
+            sy = M[1, 1]
+            scaleRecovered = math.sqrt(np.abs(sx*sy))
+
+            w, _ = np.linalg.eig(M[0:2,0:2])
+            w = np.sort(w)[::-1]
+            DV = w[1]/w[0]
+            #pdb.set_trace()
+
+            dic["CR_seq"].append(1.0/scaleRecovered)
+            dic["DV_seq"].append(DV)  
+
+            # For Stability score calculation
+            if count < len(frameList):
+                f_path = f[:-9] + '%05d.png' % (int(f[-9:-4])+1)
+                if f_path in dic["out_sift"]:
+                    keyPoints2o, descriptors2o = dic["out_sift"][f_path]
                 else:
-                    keyPoints1o, descriptors1o = sift.detectAndCompute(img1o, None)
-                    dic["out_sift"][f] = (keyPoints1o, descriptors1o)
-
-                # Match the descriptors
-                matches = bf.knnMatch(descriptors1, descriptors1o, k=2)
-
-                # Select the good matches using the ratio test
+                    img2o = cv2.imread(os.path.join(out_src, f_path), 0)
+                    img2o = cv2.resize(img2o, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
+                    keyPoints2o, descriptors2o = sift.detectAndCompute(img2o, None)
+                    dic["out_sift"][f_path] = (keyPoints2o, descriptors2o)
+                
+                matches = bf.knnMatch(descriptors1o, descriptors2o, k=2)
                 goodMatches = []
 
                 for m, n in matches:
@@ -139,80 +196,19 @@ def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
 
                 if len(goodMatches) > MIN_MATCH_COUNT:
                     # Get the good key points positions
-                    sourcePoints = np.float32([ keyPoints1[m.queryIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
-                    destinationPoints = np.float32([ keyPoints1o[m.trainIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
+                    sourcePoints = np.float32([ keyPoints1o[m.queryIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
+                    destinationPoints = np.float32([ keyPoints2o[m.trainIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
                     
+                    # Obtain the homography matrix
                     M, mask = cv2.findHomography(sourcePoints, destinationPoints, method=cv2.RANSAC, ransacReprojThreshold=thresh)
-                    im_dst = cv2.warpPerspective(img1, M, (w_size,h_size))  
 
-                    cm = []
-                    for i in range(6):
-                        for j in range(6):
-                            hs = int(h_size * (0.2 + 0.1 * i))
-                            he = int(h_size * (0.3 + 0.1 * i))
-                            ws = int(w_size * (0.2 + 0.1 * j))
-                            we = int(w_size * (0.3 + 0.1 * j))
-                            cm.append(np.corrcoef(img1o[hs:he, ws:we].flat, im_dst[hs:he, ws:we].flat))
-                    dic["distortion"].append(cm)
-
-                    if crop_scale:
-                        sx, sy = get_scale(M)
-                        M_scale = get_rescale_matrix(M, sx, sy)
-                        w_crop, h_crop = crop_metric(M_scale)
-                    else:
-                        w_crop, h_crop = crop_metric(M)
-                    dic["w_crop"].append(w_crop)
-                    dic["h_crop"].append(h_crop)
-
-                # Obtain Scale, Translation, Rotation, Distortion value
-                sx = M[0, 0]
-                sy = M[1, 1]
-                scaleRecovered = math.sqrt(np.abs(sx*sy))
-
-                w, _ = np.linalg.eig(M[0:2,0:2])
-                w = np.sort(w)[::-1]
-                DV = w[1]/w[0]
-                #pdb.set_trace()
-
-                dic["CR_seq"].append(1.0/scaleRecovered)
-                dic["DV_seq"].append(DV)  
-
-                # For Stability score calculation
-                if count < len(frameList):
-                    f_path = f[:-9] + '%05d.png' % (int(f[-9:-4])+1)
-                    if f_path in dic["out_sift"]:
-                        keyPoints2o, descriptors2o = dic["out_sift"][f_path]
-                    else:
-                        img2o = cv2.imread(os.path.join(out_src, f_path), 0)
-                        img2o = cv2.resize(img2o, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
-                        keyPoints2o, descriptors2o = sift.detectAndCompute(img2o, None)
-                        dic["out_sift"][f_path] = (keyPoints2o, descriptors2o)
-                    
-                    matches = bf.knnMatch(descriptors1o, descriptors2o, k=2)
-                    goodMatches = []
-
-                    for m, n in matches:
-                        if m.distance < ratio * n.distance:
-                            goodMatches.append(m)
-
-                    if len(goodMatches) > MIN_MATCH_COUNT:
-                        # Get the good key points positions
-                        sourcePoints = np.float32([ keyPoints1o[m.queryIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
-                        destinationPoints = np.float32([ keyPoints2o[m.trainIdx].pt for m in goodMatches ]).reshape(-1, 1, 2)
-                        
-                        # Obtain the homography matrix
-                        M, mask = cv2.findHomography(sourcePoints, destinationPoints, method=cv2.RANSAC, ransacReprojThreshold=thresh)
-
-                    P_seq.append(np.matmul(Pt, M))
-                    Pt = np.matmul(Pt, M)
-                if count % 10 ==0:
-                    sys.stdout.write('\rFrame: ' + str(count) + '/' + str(len(frameList)))
-                    sys.stdout.flush()
-                dic["count"] = count
-                count += 1
-            except:
-                print("Skip the frame", index)
-                continue
+                P_seq.append(np.matmul(Pt, M))
+                Pt = np.matmul(Pt, M)
+            if count % 10 ==0:
+                sys.stdout.write('\rFrame: ' + str(count) + '/' + str(len(frameList)))
+                sys.stdout.flush()
+            dic["count"] = count
+            count += 1
 
     # Make 1D temporal signals
     P_seq_t = np.asarray([1])
@@ -309,15 +305,15 @@ if __name__ == '__main__':
     in_folder = os.path.join(metric_path, "in_frame")
     if not os.path.exists(in_folder):
         os.makedirs(in_folder)
-    print("Convert video to frames")
-    video2frame_one_seq(in_video, in_folder)
+        print("Convert video to frames")
+        video2frame_one_seq(in_video, in_folder)
         
     out_video = "./test/iccv_6/s_114_outdoor_running_trail_daytime_stab.mp4"
     out_folder = os.path.join(metric_path, "out_frame")
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
-    print("Convert video to frames")
-    video2frame_one_seq(out_video, out_folder)
+        print("Convert video to frames")
+        video2frame_one_seq(out_video, out_folder)
     
     package = os.path.join(metric_path, "iccv_6.pt")
     FOV = metrics(in_folder, out_folder, package)

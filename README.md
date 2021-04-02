@@ -42,4 +42,4 @@ The result is under "dvs/test/iccv_6".
 
 In **s_114_outdoor_running_trail_daytime.jpg**, blue curve is the output of our models and green curve is input. 
 
-**s_114_outdoor_running_trail_daytime_stab.mp4** is uncropped stabilized video and **s_114_outdoor_running_trail_daytime_stab_crop.mp4** is cropped stabilized video.
+**s_114_outdoor_running_trail_daytime_stab.mp4** is uncropped stabilized video and **s_114_outdoor_running_trail_daytime_stab_crop.mp4** is cropped stabilized video. Note the cropped video is generated after running the metrics code. 

@@ -2,7 +2,6 @@ import numpy as np
 from numpy import linalg as LA
 import matplotlib.pyplot as plt
 import torch
-import torchgeometry as tgm
 from torch.autograd import Variable
 
 def get_static(height = 1080, width = 1920, ratio = 0.1):
@@ -447,17 +446,6 @@ def ConvertRotationMatrixToQuaternion(m):
         qy = (m[1,2] + m[2,1]) / S
         qz = 0.25 * S
     return np.array([qx,qy,qz,qw])
-
-def torch_ConvertRotationMatrixToQuaternion(m, USE_CUDA = True):
-    batch_size = m.size()[0]
-    res = torch.unsqueeze(torch.Tensor([[0,0,0]]).repeat(batch_size,1),2)
-    if USE_CUDA == True:
-        res = res.cuda()
-
-    matrix3d = torch.cat((m,res), dim = 2)
-    q = tgm.rotation_matrix_to_quaternion(matrix3d)  # Still need to consider diff betweem [0,0,0,0] and [0,0,0,1]
-    q = torch.cat((q[:,1:],q[:,:1]), dim =1)
-    return q
 
 def GetIntrinsics(focal_length, offset, width, height):
     intrinsics = [

@@ -1,7 +1,6 @@
 import numpy as np
 from .read_write import load_video, save_video
 import torch
-import torchgeometry as tgm
 import cv2
 from .rasterizer import Rasterization
 import time
