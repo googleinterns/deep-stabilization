@@ -44,7 +44,7 @@ def run(loader, cf, USE_CUDA=True):
         virtual_queue = [None] * batch_size
 
         for j in range(step):
-            if (j+1) % 10 == 0:
+            if (j+1) % 100 == 0:
                 print("Step: "+str(j+1)+"/"+str(step))
             virtual_inputs, vt_1 = loader.dataset.get_virtual_data(
                 virtual_queue, real_queue_idx, times[:, j], times[:, j+1], times[:, 0], batch_size, number_virtual, real_postion[:,j]) 

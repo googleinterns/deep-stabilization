@@ -23,7 +23,7 @@ def warp_video(mesh_path, video_path, save_path, losses = None, frame_number = F
     for i in range(seq+1):
         if seq_length*i==length:
             break
-        print("Seq: ",i)
+        print("Frame: "+str(i*seq_length)+"/"+str(length))
         frame_array_save = warpping_rast(grid_data[seq_length*i:min(seq_length*(i+1),length)], frame_array[seq_length*i:min(seq_length*(i+1),length)], losses = losses)
         save_video(save_path,frame_array_save, fps, size, losses = losses, frame_number = frame_number, writer = writer)
     writer.release()

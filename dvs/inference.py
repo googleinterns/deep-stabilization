@@ -122,7 +122,7 @@ def inference(cf, data_path, USE_CUDA):
     checkpoints_dir = make_dir(checkpoints_dir, cf)
     files = os.listdir(data_path)
     for f in files:
-        if f[-3:] == "mp4" and "no_ois" not in f and "gimbal" not in f.lower() and "grid" not in f.lower() and "flo" not in f.lower():
+        if f[-3:] == "mp4" and "no_ois" not in f  and "no_shutter" not in f  and "gimbal" not in f.lower() and "grid" not in f.lower() and "flo" not in f.lower():
             video_name = f[:-4]
 
     # Define the model

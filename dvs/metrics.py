@@ -103,7 +103,7 @@ def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
     Pt = np.asarray([[1.0,0.0,0.0],[0.0,1.0,0.0],[0.0,0.0,1.0]])
     P_seq = []
     count = 1
-    for f in frameList:
+    for index, f in enumerate(frameList, 0):
         if f.endswith('.png'):
             try:
                 # Load the images in gray scale
@@ -211,7 +211,7 @@ def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
                 dic["count"] = count
                 count += 1
             except:
-                print("Error for this frame")
+                print("Skip the frame", index)
                 continue
 
     # Make 1D temporal signals
@@ -309,13 +309,15 @@ if __name__ == '__main__':
     in_folder = os.path.join(metric_path, "in_frame")
     if not os.path.exists(in_folder):
         os.makedirs(in_folder)
-        video2frame_one_seq(in_video, in_folder)
+    print("Convert video to frames")
+    video2frame_one_seq(in_video, in_folder)
         
     out_video = "./test/iccv_6/s_114_outdoor_running_trail_daytime_stab.mp4"
     out_folder = os.path.join(metric_path, "out_frame")
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
-        video2frame_one_seq(out_video, out_folder)
+    print("Convert video to frames")
+    video2frame_one_seq(out_video, out_folder)
     
     package = os.path.join(metric_path, "iccv_6.pt")
     FOV = metrics(in_folder, out_folder, package)
