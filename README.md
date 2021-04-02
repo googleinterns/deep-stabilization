@@ -1,7 +1,12 @@
 
 # Deep Online Fused Video Stabilization
 
-This repository contains the Pytorch implementation of [Deep Online Fused Video Stabilization](https://arxiv.org/abs/2102.01279). See more video results [here](https://zhmeishi.github.io/dvs/).
+This repository contains the Pytorch implementation of [Deep Online Fused Video Stabilization](https://arxiv.org/abs/2102.01279). 
+
+Here is our [project page](https://zhmeishi.github.io/dvs/).
+
+See more video results [here](https://zhmeishi.github.io/dvs/supp/results.html).
+
 ## Environment setting
 Python version >= 3.6  
 Pytorch with CUDA >= 1.0.0 (guide is [here](https://pytorch.org/get-started/locally/))  
@@ -41,7 +46,8 @@ bash run.sh # generate optical flow file for dataset
 python inference.py
 python metrics.py
 ``` 
-The loss and metric information will print in the terminal.  
+The loss and metric information will print in the terminal. The metric numbers can be slightly different due to difference on opencv/pytorch versions.  
+
 The result is under *dvs/test/iccv_6*.   
 In *s_114_outdoor_running_trail_daytime.jpg*, the blue curve is the output of our models, and the green curve is the input.   
 *s_114_outdoor_running_trail_daytime_stab.mp4* is uncropped stabilized video.  
