@@ -60,6 +60,7 @@ def get_rescale_matrix(M, sx, sy):
     S1[1,1] = 1/sy
     return np.matmul(M, S1)
 
+# https://github.com/jinsc37/DIFRINT
 def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
     load_dic = None
     if re_compute and os.path.exists(package):

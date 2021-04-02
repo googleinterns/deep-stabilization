@@ -2,7 +2,7 @@ data:
   exp: 'iccv_6'
   checkpoints_dir: './checkpoint'
   log: './log'
-  data_dir: '/home/zhmeishi/16/train'           
+  data_dir: './video'           
   use_cuda: true
   batch_size: 16
   resize_ratio: 0.25
@@ -13,7 +13,7 @@ data:
   channel_size: 1
   num_workers: 16                    # num_workers for data_loader
 model:
-  load_model:  null # s3 is iccv6_last #"./checkpoint/iccv_2/iccv_2_epoch100.checkpoint" (no optical for this) 
+  load_model:  null
   cnn:
     activate_function: relu         # sigmoid, relu, tanh, quadratic
     batch_norm: true
