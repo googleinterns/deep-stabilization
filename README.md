@@ -9,7 +9,7 @@ See more video results [here](https://zhmeishi.github.io/dvs/supp/results.html).
 
 The complete test videos will be released soon.
 
-## Environment setting
+## Environment Setting
 Python version >= 3.6  
 Pytorch with CUDA >= 1.0.0 (guide is [here](https://pytorch.org/get-started/locally/))  
 Install other used packages:
@@ -43,7 +43,7 @@ bash install.sh # install package
 bash run.sh # generate optical flow file for dataset
 ``` 
 
-## Run inference 
+## Run Inference 
 ```
 python inference.py
 python metrics.py
