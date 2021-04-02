@@ -319,4 +319,4 @@ if __name__ == '__main__':
     FOV = metrics(in_folder, out_folder, package)
 
     crop_path = out_video[:-4] + "_crop.mp4"
-    crop_video(out_video, crop_path, 0.8607)
+    crop_video(out_video, crop_path, FOV)
