@@ -60,7 +60,7 @@ def get_rescale_matrix(M, sx, sy):
     S1[1,1] = 1/sy
     return np.matmul(M, S1)
 
-# https://github.com/jinsc37/DIFRINT
+# Part of code reference from https://github.com/jinsc37/DIFRINT/blob/master/metrics.py
 def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
     load_dic = None
     if re_compute and os.path.exists(package):
@@ -111,7 +111,7 @@ def metrics(in_src, out_src, package, crop_scale = False, re_compute = False):
 
             img1o = cv2.imread(os.path.join(out_src, f), 0)
             img1o = cv2.resize(img1o, (w_size,h_size), interpolation = cv2.INTER_LINEAR)
-            sift = cv2.xfeatures2d.SURF_create()   
+            sift = cv2.SIFT_create()   
             
             if f in dic["in_sift"]:
                 keyPoints1, descriptors1 = dic["in_sift"][f]

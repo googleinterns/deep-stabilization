@@ -1,10 +1,11 @@
 colorama==0.4.4
 ffmpeg==1.4
+imageio==2.9.0
 matplotlib==3.3.4
-opencv-contrib-python==3.4.0.12
+opencv-contrib-python==4.5.1.48
 opencv-python==4.5.1.48
 pytz==2021.1
 PyYAML==5.4.1
-scipy==1.1.0
+scipy==1.5.4
 tensorboardX==2.1
 tqdm==4.59.0
