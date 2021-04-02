@@ -7,6 +7,8 @@ Here is our [project page](https://zhmeishi.github.io/dvs/).
 
 See more video results [here](https://zhmeishi.github.io/dvs/supp/results.html).
 
+The complete test videos will be released soon.
+
 ## Environment setting
 Python version >= 3.6  
 Pytorch with CUDA >= 1.0.0 (guide is [here](https://pytorch.org/get-started/locally/))  
