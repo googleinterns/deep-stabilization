@@ -1,13 +1,8 @@
-
 # Deep Online Fused Video Stabilization
 
-This repository contains the Pytorch implementation of [Deep Online Fused Video Stabilization](https://arxiv.org/abs/2102.01279). 
+[[Paper]](https://arxiv.org/abs/2102.01279) [[Project Page]](https://zhmeishi.github.io/dvs/) [[More Results]](https://zhmeishi.github.io/dvs/supp/results.html)
 
-Here is our [project page](https://zhmeishi.github.io/dvs/).
-
-See more video results [here](https://zhmeishi.github.io/dvs/supp/results.html).
-
-The complete test videos will be released soon.
+This repository contains the Pytorch implementation of our method in the paper "Deep Online Fused Video Stabilization". The complete test videos will be released soon.
 
 ## Environment Setting
 Python version >= 3.6  
