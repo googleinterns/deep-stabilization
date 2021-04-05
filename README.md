@@ -15,22 +15,21 @@ Pytorch with CUDA >= 1.0.0 (guide is [here](https://pytorch.org/get-started/loca
 Install other used packages:
 ```
 cd dvs
-pip install -r requirements.txt 
+pip install -r requirements.txt --ignore-installed
 ```
 
-## Prepare Data
+## Data Preparation
 Download sample video [here](https://drive.google.com/file/d/1nju9H8ohYZh6dGsdrQjQXFgfgkrFtkRi/view?usp=sharing) (need to requset).   
-After uncompress, move the *video* folder under the *dvs* folder.   
+Uncompress the *video* folder under the *dvs* folder  
 
 ```
-python rm_ois.py # generete video used in metrics.py 
+python load_frame_sensor_data.py 
 ```
-Demo of curve visualization and mesh-based-warping:  
-The **rolling shutter correction without stabilization result** can be found at *dvs/video/s_114_outdoor_running_trail_daytime/ControlCam_20200930_104820_no_shutter.mp4*.  
+Demo of curve visualization:  
 The **gyro/OIS curve visualization** can be found at *dvs/video/s_114_outdoor_running_trail_daytime/ControlCam_20200930_104820_real.jpg*.  
 
 
-## Prepare FlowNet2
+## FlowNet2 Preparation
 Note, we provide optical flow result in our data. If you would like to generate them by yourself, please follow [FlowNet2 official website](https://github.com/NVIDIA/flownet2-pytorch) and guide below. Otherwise, you can skip this section. 
 
 Note, FlowNet2 installation is tricky. Please use Python=3.6 and Pytorch=1.0.0. More details are [here](https://github.com/NVIDIA/flownet2-pytorch/issues/156) or contact us for any questions.
@@ -43,14 +42,14 @@ bash install.sh # install package
 bash run.sh # generate optical flow file for dataset
 ``` 
 
-## Run Inference 
+## Running Inference 
 ```
 python inference.py
 python metrics.py
 ``` 
-The loss and metric information will print in the terminal. The metric numbers can be slightly different due to difference on opencv/pytorch versions.  
+The loss and metric information will be printed in the terminal. The metric numbers can be slightly different due to difference on opencv/pytorch versions.  
 
-The result is under *dvs/test/iccv_6*.   
+The result is under *dvs/test/stabilzation*.   
 In *s_114_outdoor_running_trail_daytime.jpg*, the blue curve is the output of our models, and the green curve is the input.   
 *s_114_outdoor_running_trail_daytime_stab.mp4* is uncropped stabilized video.  
 *s_114_outdoor_running_trail_daytime_stab_crop.mp4* is cropped stabilized video. Note, the cropped video is generated after running the metrics code.   

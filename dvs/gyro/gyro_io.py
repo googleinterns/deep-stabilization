@@ -50,7 +50,7 @@ def get_rotations(frame_data, quats_data, ois_data, num_frames):
 def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_offsets_virtual, rotations_virtual2, lens_offsets_virtual2, path):
     # figure('units','normalized','outerposition',[0 0 1 1])
     plt.clf()
-    plt.figure(figsize=(8,8))
+    plt.figure(figsize=(8,16))
     
     plt.subplot(5,1,1)
     plt.plot(rotations_real[:,0], "g")
@@ -59,7 +59,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
     if rotations_virtual2 is not None:
         plt.plot(rotations_virtual2[:,0], "r")
     plt.ylim(-0.02, 0.02)
-    plt.xlabel('gyro x')
+    plt.xlabel('frame id')
+    plt.ylabel('gyro x')
 
     plt.subplot(5,1,2)
     plt.plot(rotations_real[:,1], "g")
@@ -68,7 +69,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
     if rotations_virtual2 is not None:
         plt.plot(rotations_virtual2[:,1], "r")
     plt.ylim(-0.02, 0.02)
-    plt.xlabel('gyro y')
+    plt.xlabel('frame id')
+    plt.ylabel('gyro y')
 
     plt.subplot(5,1,3)
     plt.plot(rotations_real[:,2], "g")
@@ -77,7 +79,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
     if rotations_virtual2 is not None:
         plt.plot(rotations_virtual2[:,2], "r")
     plt.ylim(-0.02, 0.02)
-    plt.xlabel('gyro z')
+    plt.xlabel('frame id')
+    plt.ylabel('gyro z')
     
     plt.subplot(5,1,4)
     plt.plot(lens_offsets_real[:,0], "g")
@@ -85,7 +88,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
         plt.plot(lens_offsets_virtual[:,0], "b")
     if rotations_virtual2 is not None:
         plt.plot(lens_offsets_virtual2[:,0], "r")
-    plt.xlabel('ois x')
+    plt.xlabel('frame id')
+    plt.ylabel('ois x')
 
     plt.subplot(5,1,5)
     plt.plot(lens_offsets_real[:,1], "g")
@@ -93,7 +97,8 @@ def visual_rotation(rotations_real, lens_offsets_real, rotations_virtual, lens_o
         plt.plot(lens_offsets_virtual[:,1], "b")
     if rotations_virtual2 is not None:
         plt.plot(lens_offsets_virtual2[:,1], "r")
-    plt.xlabel('ois y')
+    plt.xlabel('frame id')
+    plt.ylabel('ois y')
     
     plt.savefig(path[:-4]+".jpg")
     return

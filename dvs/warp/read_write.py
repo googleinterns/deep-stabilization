@@ -43,7 +43,7 @@ def video2frame(path, resize = None):
         print(data_folder)
         files = os.listdir(data_folder)
         for f in files:
-            if f[-7:] == "ois.mp4":
+            if f[-4:] == ".mp4":
                 video_name = f
         video_path = os.path.join(data_folder, video_name)
         frame_folder = os.path.join(data_folder, "frames")

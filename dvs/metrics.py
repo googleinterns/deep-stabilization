@@ -297,25 +297,25 @@ def crop_rm_outlier(crop):
     return sorted(crop)[5:]
 
 if __name__ == '__main__':
-    metric_path = os.path.join("./test/iccv_6/metric")
+    metric_path = os.path.join("./test/stabilzation/metric")
     if not os.path.exists(metric_path):
         os.makedirs(metric_path)
 
-    in_video = "./video/s_114_outdoor_running_trail_daytime/ControlCam_20200930_104820_no_shutter.mp4"
+    in_video = "./video/s_114_outdoor_running_trail_daytime/ControlCam_20200930_104820.mp4"
     in_folder = os.path.join(metric_path, "in_frame")
     if not os.path.exists(in_folder):
         os.makedirs(in_folder)
         print("Convert video to frames")
         video2frame_one_seq(in_video, in_folder)
         
-    out_video = "./test/iccv_6/s_114_outdoor_running_trail_daytime_stab.mp4"
+    out_video = "./test/stabilzation/s_114_outdoor_running_trail_daytime_stab.mp4"
     out_folder = os.path.join(metric_path, "out_frame")
     if not os.path.exists(out_folder):
         os.makedirs(out_folder)
         print("Convert video to frames")
         video2frame_one_seq(out_video, out_folder)
     
-    package = os.path.join(metric_path, "iccv_6.pt")
+    package = os.path.join(metric_path, "stabilzation.pt")
     FOV = metrics(in_folder, out_folder, package)
 
     crop_path = out_video[:-4] + "_crop.mp4"

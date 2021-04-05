@@ -211,7 +211,7 @@ def main(args = None):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser("Training model")
-    parser.add_argument("--config", default="./conf/iccv_6.yaml", help="Config file.")
+    parser.add_argument("--config", default="./conf/stabilzation.yaml", help="Config file.")
     parser.add_argument("--dir_path", default="./video")
     args = parser.parse_args()
     main(args = args)
