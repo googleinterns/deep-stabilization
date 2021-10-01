@@ -1,4 +1,5 @@
 
+  
 
 # Deep Online Fused Video Stabilization
 
@@ -18,7 +19,6 @@ pip install -r requirements.txt --ignore-installed
 ## Data Preparation
 Download sample video [here](https://drive.google.com/file/d/1nju9H8ohYZh6dGsdrQjQXFgfgkrFtkRi/view?usp=sharing). 
 Uncompress the *video* folder under the *dvs* folder.
-
 ```
 python load_frame_sensor_data.py 
 ```
@@ -52,7 +52,21 @@ In *s_114_outdoor_running_trail_daytime.jpg*, the blue curve is the output of ou
 *s_114_outdoor_running_trail_daytime_stab_crop.mp4* is cropped stabilized video. Note, the cropped video is generated after running the metrics code.   
 
 ## Training
-TBA
+Download dataset for training and test [here](https://storage.googleapis.com/dataset_release/all.zip). 
+Uncompress *all.zip* and move *dataset_release* folder under the *dvs* folder.
+
+Follow FlowNet2 Preparation Section.
+```
+python warp/read_write.py --dir_path ./dataset_release # video2frames
+cd flownet2
+bash run_release.sh # generate optical flow file for dataset
+``` 
+
+Run training code.
+```
+python train.py
+``` 
+The model is saved in *checkpoint/stabilzation_train*.
 
 ## Citation 
 If you use this code or dataset for your research, please cite our paper.
@@ -63,4 +77,4 @@ If you use this code or dataset for your research, please cite our paper.
   journal={arXiv preprint arXiv:2102.01279},
   year={2021}
 }
-``` 
+```
