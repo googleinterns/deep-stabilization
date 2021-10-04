@@ -8,6 +8,16 @@ import matplotlib.pyplot as plt
 from gyro import get_rotations
 import shutil
 
+def save_train_info(name, checkpoints_dir, cf, model, count, optimizer = None):
+    path = None
+    if name == "last":
+        path = os.path.join(checkpoints_dir, cf['data']['exp']+'_last.checkpoint')
+    elif name == "best":
+        path = os.path.join(checkpoints_dir, cf['data']['exp']+'_best.checkpoint')
+    else:
+        path = os.path.join(checkpoints_dir, cf['data']['exp']+'_epoch%d.checkpoint'%count)
+    torch.save(model.save_checkpoint(epoch = count, optimizer=optimizer), path)
+
 def make_dir(checkpoints_dir ,cf):
     inference_path = "./test"
     if not os.path.exists(checkpoints_dir):
@@ -50,3 +60,18 @@ def norm_flow(flow, h, w):
         flow[:,:,:,0] /= h
         flow[:,:,:,1] /= w
     return flow
+
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.avg = 0
+        self.sum = 0
+        self.cnt = 0
+
+    def update(self, val, n=1):
+        self.sum += val * n
+        self.cnt += n
+        if self.cnt > 0:
+            self.avg = self.sum / self.cnt

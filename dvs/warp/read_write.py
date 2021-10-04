@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import ffmpeg  
 import json
 import torch 
+import argparse
     
 def load_video(path, save_dir = None, resize = None, length = -1): # N x H x W x C
     vidcap = cv2.VideoCapture(path)
@@ -105,4 +106,12 @@ def draw_number(frame, num, x = 10, y = 10, message = "Frame: "):
     return cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
 
 if __name__ == "__main__":
-    video2frame("./video", resize = 4)
+    parser = argparse.ArgumentParser("FlowNet2 Preparation")
+    parser.add_argument("--dir_path", default="./video")
+    args = parser.parse_args()
+    dir_path = args.dir_path
+    if dir_path == "./video":
+        video2frame(dir_path, resize = 4)
+    else:
+        video2frame(os.path.join(dir_path, "test"), resize = 4)
+        video2frame(os.path.join(dir_path, "training"), resize = 4)

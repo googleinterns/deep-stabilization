@@ -34,7 +34,7 @@ def get_data_loader(cf, no_flo = False):
 def get_dataset(cf, no_flo = False):
     resize_ratio = cf["data"]["resize_ratio"]
     train_transform, test_transform = _data_transforms()
-    train_path = os.path.join(cf["data"]["data_dir"], "train")
+    train_path = os.path.join(cf["data"]["data_dir"], "training")
     test_path = os.path.join(cf["data"]["data_dir"], "test")
     if not os.path.exists(train_path):
         train_path = cf["data"]["data_dir"]
