@@ -1,9 +1,6 @@
-
-  
-
 # Deep Online Fused Video Stabilization
 
-[[Paper]](https://arxiv.org/abs/2102.01279) [[Project Page]](https://zhmeishi.github.io/dvs/) [[Dataset]](https://storage.googleapis.com/dataset_release/all.zip) [[Our Result]](https://storage.googleapis.com/dataset_release/inference_result_release.zip) [[More Results]](https://zhmeishi.github.io/dvs/supp/results.html) 
+[[Paper]](https://openaccess.thecvf.com/content/WACV2022/papers/Shi_Deep_Online_Fused_Video_Stabilization_WACV_2022_paper.pdf)[[Supplementary]](https://zhmeishi.github.io/dvs/paper/dvs_supp.pdf)  [[Project Page]](https://zhmeishi.github.io/dvs/) [[Dataset]](https://storage.googleapis.com/dataset_release/all.zip) [[Our Result]](https://storage.googleapis.com/dataset_release/inference_result_release.zip) [[More Results]](https://zhmeishi.github.io/dvs/supp/results.html) 
 
 This repository contains the Pytorch implementation of our method in the paper "Deep Online Fused Video Stabilization".
 
