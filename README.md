@@ -68,10 +68,11 @@ The model is saved in *checkpoint/stabilzation_train*.
 ## Citation 
 If you use this code or dataset for your research, please cite our paper.
 ```
-@article{shi2021deep,
+@inproceedings{shi2022deep,
   title={Deep Online Fused Video Stabilization},
   author={Shi, Zhenmei and Shi, Fuhao and Lai, Wei-Sheng and Liang, Chia-Kai and Liang, Yingyu},
-  journal={arXiv preprint arXiv:2102.01279},
-  year={2021}
+  booktitle={Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision},
+  pages={1250--1258},
+  year={2022}
 }
 ```
