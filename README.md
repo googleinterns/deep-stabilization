@@ -1,9 +1,6 @@
-
-  
-
 # Deep Online Fused Video Stabilization
 
-[[Paper]](https://arxiv.org/abs/2102.01279) [[Project Page]](https://zhmeishi.github.io/dvs/) [[Dataset]](https://storage.googleapis.com/dataset_release/all.zip) [[Our Result]](https://storage.googleapis.com/dataset_release/inference_result_release.zip) [[More Results]](https://zhmeishi.github.io/dvs/supp/results.html) 
+[[Paper]](https://openaccess.thecvf.com/content/WACV2022/papers/Shi_Deep_Online_Fused_Video_Stabilization_WACV_2022_paper.pdf)[[Supplementary]](https://zhmeishi.github.io/dvs/paper/dvs_supp.pdf)  [[Project Page]](https://zhmeishi.github.io/dvs/) [[Dataset]](https://storage.googleapis.com/dataset_release/all.zip) [[Our Result]](https://storage.googleapis.com/dataset_release/inference_result_release.zip) [[More Results]](https://zhmeishi.github.io/dvs/supp/results.html) 
 
 This repository contains the Pytorch implementation of our method in the paper "Deep Online Fused Video Stabilization".
 
@@ -71,10 +68,11 @@ The model is saved in *checkpoint/stabilzation_train*.
 ## Citation 
 If you use this code or dataset for your research, please cite our paper.
 ```
-@article{shi2021deep,
+@inproceedings{shi2022deep,
   title={Deep Online Fused Video Stabilization},
   author={Shi, Zhenmei and Shi, Fuhao and Lai, Wei-Sheng and Liang, Chia-Kai and Liang, Yingyu},
-  journal={arXiv preprint arXiv:2102.01279},
-  year={2021}
+  booktitle={Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision},
+  pages={1250--1258},
+  year={2022}
 }
 ```
