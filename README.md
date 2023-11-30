@@ -14,7 +14,7 @@ pip install -r requirements.txt --ignore-installed
 ```
 
 ## Data Preparation
-Download sample video [here](https://drive.google.com/file/d/1nju9H8ohYZh6dGsdrQjQXFgfgkrFtkRi/view?usp=sharing). 
+Download sample video [here](https://drive.google.com/file/d/1PpF3-6BbQKy9fldjIfwa5AlbtQflx3sG/view?usp=sharing).
 Uncompress the *video* folder under the *dvs* folder.
 ```
 python load_frame_sensor_data.py 
