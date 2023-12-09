@@ -6,6 +6,6 @@ opencv-contrib-python==4.5.1.48
 opencv-python==4.5.1.48
 pytz==2021.1
 PyYAML==5.4.1
-scipy==1.5.4
+scipy==1.10.0
 tensorboardX==2.1
 tqdm==4.59.0
